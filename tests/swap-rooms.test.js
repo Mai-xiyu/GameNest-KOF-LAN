@@ -5,6 +5,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const WebSocket = require('ws');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 // 独立端口,避免与其他测试冲突;测试自身不绑定其他端口
 const PORT = 3187;
@@ -20,8 +23,9 @@ function assertConsistent(players, tag) {
 }
 
 test('swap_seat / remove_bot keeps seats consistent', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gamenest-swap-'));
   const srv = spawn(process.execPath, ['server.js'], {
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, ENABLE_BUILTIN_PROTOTYPES: '1', KOF_WING_DIR: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let err = '';
@@ -39,7 +43,9 @@ test('swap_seat / remove_bot keeps seats consistent', async () => {
     });
 
     let players = null;
-    const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
+    const response = await fetch(`http://127.0.0.1:${PORT}/api/session`, { method: 'POST' });
+    const cookie = response.headers.get('set-cookie').split(';')[0];
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}`, { headers: { Cookie: cookie } });
     ws.on('message', raw => {
       const m = JSON.parse(raw.toString());
       if (m.players) players = m.players;
@@ -74,5 +80,7 @@ test('swap_seat / remove_bot keeps seats consistent', async () => {
     ws.close();
   } finally {
     srv.kill();
+    await new Promise(resolve => srv.once('exit', resolve));
+    if (dataDir.startsWith(os.tmpdir() + path.sep)) fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });

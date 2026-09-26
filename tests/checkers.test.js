@@ -10,6 +10,13 @@ function freshState() {
   return state;
 }
 
+test('playerView is safe before the board is initialized', () => {
+  var view = checkers.playerView(checkers.createState(), 0);
+
+  assert.equal(view.board, null);
+  assert.deepEqual(view.legalMoves, []);
+});
+
 test('initial board has 12 pieces per side', () => {
   var state = freshState();
   var redCount = 0, blackCount = 0;
@@ -206,6 +213,25 @@ test('king promotion: man reaching opposite baseline becomes king', () => {
   assert.equal(err, null);
   assert.equal(state.board[0][0].type, 'k', 'red man should be promoted to king at row 0');
   assert.equal(state.board[0][0].side, 0);
+});
+
+test('promotion ends a capture turn even when the new king could capture backward', () => {
+  var state = freshState();
+  state.board = Array.from({ length: 8 }, function() { return Array(8).fill(null); });
+  state.board[2][1] = { type: 'm', side: 0 };
+  state.board[1][2] = { type: 'm', side: 1 };
+  state.board[1][4] = { type: 'm', side: 1 };
+  state.currentPlayer = 0;
+
+  var err = checkers.handleMove(
+    { from: { row: 2, col: 1 }, to: { row: 0, col: 3 } },
+    state, 0
+  );
+
+  assert.equal(err, null);
+  assert.equal(state.board[0][3].type, 'k');
+  assert.equal(state.mustCapture, false, 'English draughts ends the turn on crowning');
+  assert.equal(state.currentPlayer, 1);
 });
 
 test('loss detection: player with no pieces loses', () => {

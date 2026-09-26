@@ -2,6 +2,32 @@
   if (!window.__LANG) window.__LANG = {};
   if (!window.__LANG.zh) window.__LANG.zh = {};
   window.__LANG.zh.catalog = {
+    billiards: {
+      name: '在线台球',
+      subtitle: '开源上游接入预览 · 待真人验收',
+      description: '复用 axfsz/billiards 的球桌、物理、规则、房间和同步，仅通过适配层接入平台身份、同源 HTTP/WS、返回大厅和休闲战绩。双真人设备、断公网和单镜像验收未完成，不进入竞技排行。',
+      players: '2人', category: '体育竞技', tags: ['台球', '开源上游', '接入预览'],
+    },
+    'mahjong-mamahjong': {
+      name: 'MaMahjong 多人麻将', subtitle: '开源上游接入预览 · 待真人验收',
+      description: '复用 MaMahjong 的网页客户端、房间、服务端权威规则、同步和逐玩家私牌投影，支持四人／三人日麻、冲击麻将、四川麻将和武汉麻将。已接入平台稳定身份、同源 HTTP/WS、返回大厅、Windows 归档兼容和单镜像构建；平台战绩、真人多设备与断公网验收未完成。',
+      players: '3–4人（源码规则）', category: '牌桌竞技', tags: ['麻将', '开源上游', '接入预览'],
+    },
+    'kof-wing': {
+      name: '拳皇 Wing 1.85', subtitle: '用户本地资源适配 · 局域网双人预览',
+      description: '复用用户提供的原 SWF、角色、战斗规则和 Ruffle 运行时；房主运行唯一权威实例，第二名玩家通过局域网 WebRTC 接收画面并回传原版 2P 按键。访客声音、房主刷新恢复、真人双设备和断公网验收待完成；暂不接入战绩或排行榜。',
+      players: '1–2人（联机限2人）', category: '动作格斗', tags: ['格斗', '局域网双人', '键盘'],
+    },
+    'social-starliner': {
+      name: 'Starliner 地图行动候选', subtitle: '预览适配 · 默认关闭',
+      description: '地图行动；源码限制3–10人，四会话及十会话协议预检通过，真人未验；手机触控源码存在、实机未验；建议现场交流，预览提供会议公共、破坏者阵营与出局玩家隔离文字频道，语音可选但未验；预览可记个人休闲战绩，不进入竞技排行榜。汉化和离线真人验收待完成。',
+      category: '阵营推理', players: '3–10人（源码限制）', tags: ['地图行动', '预览候选'],
+    },
+    'social-onenight': {
+      name: '一夜狼人杀', subtitle: '预览适配 · 默认关闭',
+      description: '桌游式；复用上游房间、服务端配牌、夜间行动、投票和胜负规则，源码限制3–10人，真人未验；手机未验；需现场交流；无内置文字或语音。已接入平台身份、安全回席和分最终阵营的个人休闲战绩，不进入竞技排行榜；不能代替地图行动类。',
+      category: '阵营推理', players: '3–10人（规则限制）', tags: ['桌游式', '预览候选'],
+    },
     tictactoe: {
       name: '井字棋',
       subtitle: '三子连线，最快开局',
@@ -40,8 +66,8 @@
     },
     doudizhu: {
       name: '斗地主',
-      subtitle: '叫地主，抢节奏',
-      description: '经典三人扑克，带 AI 也能随时开局。',
+      subtitle: 'GameNest 内置规则原型',
+      description: '仅供当前版本体验；正式版将优先复用已实现完整规则、房间和服务端视图隔离的开源上游。',
       players: '2-3人',
       duration: '约10分钟',
       category: '牌桌竞技',
@@ -139,8 +165,8 @@
     },
     'mahjong-sichuan': {
       name: '麻将',
-      subtitle: '四川血战 / 广东鸡平胡',
-      description: '国粹麻将，支持四川血战到底与广东鸡平胡两种打法。',
+      subtitle: 'GameNest 内置麻将原型',
+      description: '当前四川／广东规则仅供体验，未通过真人规则验收；找到合格的开源网页麻将前不作为正式交付。',
       players: '2-4人',
       duration: '约20分钟',
       category: '牌桌竞技',
@@ -193,12 +219,12 @@
     },
     checkers: {
       name: '西洋跳棋',
-      subtitle: '强制吃子，升王反击',
-      description: '8×8 经典跳棋，连吃与升王。',
+      subtitle: '开源模块接入预览 · 待真人验收',
+      description: '复用固定上游的规则、双人房间、同步、AI 与渲染；已接入平台身份、邀请、断线回席和个人休闲战绩，真人双设备及离线 LAN 验收待完成。',
       players: '2人',
-      duration: '约10分钟',
+      duration: '约10–20分钟',
       category: '棋盘对弈',
-      tags: ['经典', '易学'],
+      tags: ['西洋跳棋', '开源上游', '接入预览'],
     },
     connect4: {
       name: '四子棋',

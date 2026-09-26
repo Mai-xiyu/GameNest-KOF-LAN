@@ -18,8 +18,8 @@
       </div>
       <div class="hero-stats">
         <div class="hero-stat">
-          <strong>23</strong>
-          <span>款游戏</span>
+          <strong>开源</strong>
+          <span>固定版本接入</span>
         </div>
         <div class="hero-stat">
           <strong>2-10</strong>
@@ -56,6 +56,10 @@
       <strong id="mobileOnlyTitle">离线单机模式</strong>
       <span id="mobileOnlySub">流量下无法与他人联机，但可加 AI 玩。</span>
     </div>
+    <section class="surface-panel" style="margin-top:20px;padding:16px" aria-label="游戏完成度说明">
+      <h2>游戏来源与完成度</h2>
+      <p>正式大厅只展示固定版本的开源上游接入和明确标注的候选。GameNest 内置麻将等自制原型不再提供网页入口或创建权限。正式版优先保留上游完整规则、房间和同步实现；在真人联机、私密信息和离线 LAN 验收通过前，不标记为完整游戏。</p>
+    </section>
     <section class="lobby-discovery">
       <div class="discovery-header">
         <div>
@@ -82,6 +86,23 @@
       <p class="browse-empty" id="emptyState" style="display:none">没有找到匹配的游戏，换个关键词试试。</p>
     </section>
 
+    <section class="surface-panel" style="margin-top:24px;padding:20px" aria-label="阵营推理候选">
+      <h2>阵营推理 · 第二阶段候选</h2>
+      <p>以下游戏尚未接入，不提供创建房间入口；桌游式玩法不替代地图行动类。</p>
+      <p><strong>Starliner（地图行动类预览候选）</strong>：源码允许 3–10 人，四会话协议预检通过，真人及手机实机未验；建议现场交流，有会议文字聊天，可选局域网语音未验。预览适配支持个人休闲战绩，不进入竞技排行榜；汉化、Docker 和断公网验收待完成。默认构建关闭；管理员实际启用本地预览后，上方卡片才会变为可启动。</p>
+      <p><strong>一夜狼人杀（桌游式候选）</strong>：规则限制 3–10 人，真人设备数未验；手机操作未验；需要现场交流；无内置文字或语音；未接入战绩或排行榜。重连存在昵称冒领风险，暂不开放。</p>
+    </section>
+
+    <section class="surface-panel" style="margin-top:24px;padding:20px">
+      <h2>个人战绩</h2>
+      <div id="playerStats">尚无已完成的对局。</div>
+      <p>身份保存在此浏览器。换设备或清理浏览器数据前，请保存一次性恢复码。</p>
+      <button id="generateRecoveryCode" type="button">生成恢复码</button>
+      <output id="recoveryCode" style="display:block;overflow-wrap:anywhere"></output>
+      <input id="recoveryInput" type="text" placeholder="输入保存的恢复码" autocomplete="off">
+      <button id="recoverIdentity" type="button">恢复身份</button>
+    </section>
+
   </main>
 
   <div class="toast" id="toast"></div>
@@ -93,16 +114,67 @@
 <script src="/js/lang/catalog-en.js"></script>
 <script src="/js/game-catalog.js"></script>
 <script>
-let selectedGame = 'monopoly';
+let selectedGame = '';
 let activeCategory = (typeof _t === 'function' ? _t('all_categories') : '\u5168\u90e8');
 let searchText = '';
 
-const __isMobileData = (new URLSearchParams(location.search).get('wifi') === '0');
+const __query = new URLSearchParams(location.search);
+const __isMobileData = (__query.get('wifi') === '0');
 const __allGames = window.gameCatalog.list();
 const __allFeatured = window.gameCatalog.featured();
 function playable(g) { return !__isMobileData || g.supportsAI !== false; }
-const catalog = __allGames.filter(playable);
-const featuredGames = __allFeatured.filter(playable);
+function visibleInLobby(g) { return g.status !== 'prototype'; }
+const catalog = __allGames.filter(visibleInLobby).filter(playable);
+const featuredGames = __allFeatured.filter(visibleInLobby).filter(playable);
+selectedGame = (catalog.find(function(game) { return game.status !== 'candidate'; }) || catalog[0] || {}).id || '';
+let sessionPromise;
+function ensureSession() {
+  if (!sessionPromise) {
+    sessionPromise = fetch('/api/session', { method: 'POST', credentials: 'same-origin' })
+      .then(function(response) {
+        if (!response.ok) throw new Error('身份服务不可用');
+        return response.json();
+      }).catch(function(error) { sessionPromise = null; throw error; });
+  }
+  return sessionPromise;
+}
+
+function loadStats() {
+  ensureSession().then(function() {
+    return fetch('/api/me/stats', { credentials: 'same-origin' });
+  }).then(function(response) { return response.json(); }).then(function(data) {
+    const root = document.getElementById('playerStats');
+    if (!data.stats || !data.stats.length) return;
+    root.innerHTML = data.stats.map(function(row) {
+      const description = [row.gameId, row.mode, row.ruleVersion, row.configJson, row.playerCount + '人', row.faction,
+        row.trustLevel === 'server_validated' ? '服务端验证' : '休闲'].join(' · ');
+      return '<p>' + escapeHtml(description) + '：参与 ' + row.played + '，胜 ' + row.wins +
+        '，胜率 ' + Math.round(row.winRate * 100) + '%</p>';
+    }).join('');
+  }).catch(function() {
+    document.getElementById('playerStats').textContent = '无法读取战绩，请检查服务器。';
+  });
+}
+loadStats();
+document.getElementById('generateRecoveryCode').addEventListener('click', function() {
+  ensureSession().then(function() {
+    return fetch('/api/me/recovery-code', { method: 'POST', credentials: 'same-origin' });
+  }).then(function(response) {
+    if (!response.ok) throw new Error('恢复码生成失败');
+    return response.json();
+  }).then(function(result) {
+    document.getElementById('recoveryCode').textContent = '只显示一次，请妥善保存：' + result.code;
+  }).catch(function(error) { toast(error.message); });
+});
+document.getElementById('recoverIdentity').addEventListener('click', function() {
+  const code = document.getElementById('recoveryInput').value.trim();
+  fetch('/api/recover', { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code }),
+  }).then(function(response) {
+    if (!response.ok) throw new Error('恢复码无效或已使用');
+    location.reload();
+  }).catch(function(error) { toast(error.message); });
+});
 
 function escapeHtml(text) {
   return String(text || '')
@@ -113,7 +185,7 @@ function escapeHtml(text) {
 }
 
 function getGameInfo(id) {
-  return window.gameCatalog.byId(id) || {
+  return catalog.find(function(game) { return game.id === id; }) || window.gameCatalog.byId(id) || {
     id: id,
     name: id,
     icon: '?',
@@ -142,10 +214,15 @@ function buildCover(game, compact) {
 
 function buildFeaturedCard(game) {
   const selectedClass = game.id === selectedGame ? ' selected' : '';
+  const status = game.status === 'prototype'
+    ? (window.__ACTIVE_LANG === 'en' ? 'Built-in prototype' : '内置原型')
+    : game.status === 'preview'
+      ? (window.__ACTIVE_LANG === 'en' ? 'Upstream preview' : '上游接入预览')
+    : game.category;
   return '<button class="featured-card' + selectedClass + '" data-game="' + game.id + '">' +
     '<div class="featured-media">' + buildCover(game, true) + '</div>' +
     '<div class="featured-content">' +
-      '<div class="featured-topline"><span>' + escapeHtml(game.category) + '</span><span>' + escapeHtml(game.players) + '</span></div>' +
+      '<div class="featured-topline"><span>' + escapeHtml(status) + '</span><span>' + escapeHtml(game.players) + '</span></div>' +
       '<h3>' + escapeHtml(game.name) + '</h3>' +
       '<p>' + escapeHtml(game.subtitle) + '</p>' +
     '</div>' +
@@ -153,12 +230,25 @@ function buildFeaturedCard(game) {
 }
 
 function buildBrowseCard(game) {
+  if (game.status === 'candidate') {
+    return '<div class="browse-card" aria-disabled="true">' +
+      '<div class="browse-card-media">' + buildCover(game, false) + '</div>' +
+      '<div class="browse-card-body"><div class="browse-card-meta"><span>' + escapeHtml(game.category) +
+      '</span><span>待验证</span></div><h3>' + escapeHtml(game.name) + '</h3><p>' +
+      escapeHtml(game.description) + '</p><div class="browse-card-footer"><span>' +
+      escapeHtml(game.players) + '</span><span>未接入，不可开局</span></div></div></div>';
+  }
   const selectedClass = game.id === selectedGame ? ' selected' : '';
+  const status = game.status === 'prototype'
+    ? (window.__ACTIVE_LANG === 'en' ? 'Built-in prototype' : '内置原型')
+    : game.status === 'preview'
+      ? (window.__ACTIVE_LANG === 'en' ? 'Pending real-player test' : '待真人验收')
+    : game.duration;
   const ai = game.supportsAI ? '<span>' + _t('can_add_bot') + '</span>' : '<span>' + _t('pvp_only') + '</span>';
   return '<button class="browse-card' + selectedClass + '" data-game="' + game.id + '">' +
     '<div class="browse-card-media">' + buildCover(game, false) + '</div>' +
     '<div class="browse-card-body">' +
-      '<div class="browse-card-meta"><span>' + escapeHtml(game.category) + '</span><span>' + escapeHtml(game.duration) + '</span></div>' +
+      '<div class="browse-card-meta"><span>' + escapeHtml(game.category) + '</span><span>' + escapeHtml(status) + '</span></div>' +
       '<h3>' + escapeHtml(game.name) + '</h3>' +
       '<p>' + escapeHtml(game.description) + '</p>' +
       '<div class="browse-card-footer"><span>' + escapeHtml(game.players) + '</span>' + ai + '</div>' +
@@ -197,7 +287,9 @@ function bindSelection(containerSelector) {
 }
 
 function renderCategories() {
-  const chips = [(typeof _t === 'function' ? _t('all_categories') : '\u5168\u90e8')].concat(window.gameCatalog.categories());
+  const categories = [];
+  catalog.forEach(function(game) { if (categories.indexOf(game.category) < 0) categories.push(game.category); });
+  const chips = [(typeof _t === 'function' ? _t('all_categories') : '\u5168\u90e8')].concat(categories);
   const root = document.getElementById('categoryChips');
   root.innerHTML = chips.map(function(category) {
     const selectedClass = category === activeCategory ? ' selected' : '';
@@ -221,6 +313,48 @@ function renderCatalog() {
   renderCategories();
 }
 
+function loadIntegrationAvailability() {
+  function enableRuntimePreview(gameId, integration) {
+      const game = catalog.find(function(item) { return item.id === gameId; });
+      if (!integration || !integration.enabled || !game) return;
+      game.status = 'preview';
+      game.externalEntry = integration.entry;
+      game.runtimePreview = true;
+      game.subtitle = window.__ACTIVE_LANG === 'en'
+        ? 'Local preview enabled · real-player acceptance pending'
+        : '本地预览已启用 · 待真人验收';
+      if (!selectedGame || selectedGame === gameId) selectedGame = game.id;
+      renderCatalog();
+      updateQuickCreate();
+  }
+
+  function probeLegacyPreview(gameId, entry) {
+    return fetch(entry, { credentials: 'same-origin' })
+      .then(function(response) {
+        if (response.ok) enableRuntimePreview(gameId, { enabled: true, entry: entry });
+      })
+      .catch(function() { /* Keep the candidate disabled when the local preview is unavailable. */ });
+  }
+
+  fetch('/api/integrations', { credentials: 'same-origin' })
+    .then(function(response) {
+      if (!response.ok) throw new Error('integration availability unavailable');
+      return response.json();
+    })
+    .then(function(result) {
+      enableRuntimePreview('kof-wing', result.integrations && result.integrations['kof-wing']);
+      enableRuntimePreview('social-starliner', result.integrations && result.integrations['social-starliner']);
+      enableRuntimePreview('social-onenight', result.integrations && result.integrations['social-onenight']);
+    })
+    .catch(function() {
+      return Promise.all([
+        probeLegacyPreview('kof-wing', '/g/kof-wing/'),
+        probeLegacyPreview('social-starliner', '/g/starliner/'),
+        probeLegacyPreview('social-onenight', '/g/onenight/')
+      ]);
+    });
+}
+
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -228,11 +362,27 @@ function toast(msg) {
   setTimeout(function() { t.classList.remove('show'); }, 2500);
 }
 
-function createRoom() {
+async function createRoom() {
+  const selected = getGameInfo(selectedGame);
+  if (selected.status === 'candidate') {
+    toast('此候选尚未接入，不能创建房间');
+    return;
+  }
+  if (selected.status === 'prototype') {
+    toast(window.__ACTIVE_LANG === 'en'
+      ? 'Built-in prototypes are disabled. Use a verified open-source integration.'
+      : '内置原型已停用，请使用经过验收的开源上游接入。');
+    return;
+  }
+  if (selected.externalEntry) {
+    location.href = selected.externalEntry;
+    return;
+  }
   if (__isMobileData) {
     toast(typeof _t === 'function' ? _t('mobile_data_only_msg') : '当前使用流量上网，联机功能不可用。');
     return;
   }
+  try { await ensureSession(); } catch (error) { toast(error.message); return; }
   const ws = new WebSocket(getSocketURL());
   ws.onopen = function() {
     ws.send(JSON.stringify({ type: 'create_room', data: { game: selectedGame, lang: window.__ACTIVE_LANG || 'zh' } }));
@@ -259,12 +409,13 @@ document.getElementById('quickCreate').addEventListener('click', function() {
   createRoom();
 });
 
-document.getElementById('joinBtn').addEventListener('click', function() {
+document.getElementById('joinBtn').addEventListener('click', async function() {
   const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
   if (!code) {
     toast(typeof _t === 'function' ? _t('room_code_empty') : '\u8bf7\u8f93\u5165\u623f\u95f4\u53f7');
     return;
   }
+  try { await ensureSession(); } catch (error) { toast(error.message); return; }
   const ws = new WebSocket(getSocketURL());
   ws.onopen = function() {
     ws.send(JSON.stringify({ type: 'join_room', data: { roomId: code, lang: window.__ACTIVE_LANG || 'zh' } }));
@@ -393,6 +544,7 @@ if (sessionStorage.getItem('roomId') && sessionStorage.getItem('resumeToken')) {
 
 renderCatalog();
 updateQuickCreate();
+loadIntegrationAvailability();
 
 // Entrance animation when returning from a game
 if (sessionStorage.getItem('_returnFromGame')) {

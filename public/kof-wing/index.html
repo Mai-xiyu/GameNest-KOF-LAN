@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
+  <title>拳皇 Wing 1.85 · 局域网双人</title>
+  <link rel="icon" href="/assets/game-covers/kof-wing.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/g/kof-wing/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="back-link" href="/">← 返回大厅</a>
+    <div class="brand">
+      <span class="brand-mark">KOF</span>
+      <span>拳皇 Wing 1.85</span>
+      <span class="preview-badge">局域网预览</span>
+    </div>
+    <div class="identity" id="identity">正在读取平台身份…</div>
+  </header>
+
+  <main>
+    <section class="panel lobby-panel" id="lobbyView">
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">LOCAL ARCADE LINK</p>
+          <h1>同一局域网，双人对战</h1>
+          <p>房主运行唯一游戏实例，第二名玩家接收实时画面并控制原版 2P 键位。战斗、角色、素材和规则仍由原 SWF 执行。</p>
+          <div class="feature-row">
+            <span>2 名真人</span><span>桌面键盘优先</span><span>访客可用触屏控制</span><span>不依赖公网服务</span>
+          </div>
+        </div>
+        <img src="/g/kof-wing/source/preview.png" alt="拳皇 Wing 1.85 游戏预览">
+      </div>
+
+      <div class="lobby-actions">
+        <button class="primary large" id="createRoomButton" type="button">创建局域网房间</button>
+        <div class="join-box">
+          <label for="roomCodeInput">加入房间</label>
+          <div class="join-row">
+            <input id="roomCodeInput" autocomplete="off" maxlength="10" placeholder="KOF-ABC234">
+            <button class="secondary" id="joinRoomButton" type="button">加入</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="room-browser">
+        <div class="section-heading">
+          <div><p class="eyebrow">LAN ROOMS</p><h2>等待中的房间</h2></div>
+          <button class="ghost" id="refreshRoomsButton" type="button">刷新</button>
+        </div>
+        <div class="room-list" id="roomList"><p class="empty">暂无公开房间，可创建一个。</p></div>
+      </div>
+
+      <details class="facts">
+        <summary>联机方式与限制</summary>
+        <ul>
+          <li>房主浏览器是权威游戏实例；访客不会再运行一份可能分叉的 SWF。</li>
+          <li>画面通过无公网 STUN/TURN 的局域网 WebRTC 发送，输入通过大厅 WebSocket 回传。</li>
+          <li>访客首期只有画面和操作，声音留在房主设备；房主刷新会重启当前战斗。</li>
+          <li>原游戏没有可靠结算接口，因此暂不写入战绩或排行榜。</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="panel room-panel hidden" id="roomView">
+      <div class="room-title-row">
+        <div>
+          <p class="eyebrow">VERSUS ROOM</p>
+          <h1 id="roomTitle">双人对战房间</h1>
+        </div>
+        <button class="danger" id="leaveRoomButton" type="button">离开房间</button>
+      </div>
+
+      <div class="invite-card">
+        <div><span>完整房间码</span><strong id="roomCode">KOF-——</strong></div>
+        <div class="invite-actions">
+          <button class="secondary" id="copyCodeButton" type="button">复制房间码</button>
+          <button class="secondary" id="copyLinkButton" type="button">复制邀请链接</button>
+        </div>
+        <code id="inviteLink"></code>
+      </div>
+
+      <div class="versus-seats">
+        <article class="seat host-seat">
+          <span class="seat-index">1P · 房主</span>
+          <div class="avatar">1P</div>
+          <h2 id="hostName">等待…</h2>
+          <p id="hostState">离线</p>
+        </article>
+        <div class="versus-mark">VS</div>
+        <article class="seat guest-seat">
+          <span class="seat-index">2P · 访客</span>
+          <div class="avatar">2P</div>
+          <h2 id="guestName">等待第二名玩家</h2>
+          <p id="guestState">空位</p>
+        </article>
+      </div>
+
+      <div class="room-footer">
+        <div class="room-help">
+          <strong>开局后由房主在原游戏菜单中选择“双人 / 玩家 VS 玩家”。</strong>
+          <span>1P：WASD + J/K/L/U/I/O；2P：访客页面键盘或触屏按钮。</span>
+        </div>
+        <button class="primary large" id="startGameButton" type="button" disabled>等待第二名玩家</button>
+      </div>
+    </section>
+
+    <section class="play-view hidden" id="playView">
+      <div class="play-toolbar">
+        <div><strong id="playRole">对局</strong><span id="playRoomCode"></span></div>
+        <div class="connection-pill" id="connectionState">正在连接画面…</div>
+        <button class="danger" id="leaveGameButton" type="button">退出并关闭对局</button>
+      </div>
+
+      <div class="game-stage">
+        <div class="host-game hidden" id="hostGame">
+          <div id="ruffleContainer"></div>
+          <div class="stage-notice" id="hostNotice">
+            <strong>正在载入原版游戏…</strong>
+            <span>载入后点击画面，使用 1P 键位进入“双人 / 玩家 VS 玩家”。</span>
+          </div>
+        </div>
+        <div class="guest-game hidden" id="guestGame">
+          <video id="remoteVideo" autoplay playsinline muted></video>
+          <div class="stage-notice" id="guestNotice">
+            <strong>等待房主画面…</strong>
+            <span>连接后可使用 WASD / 方向键与 J/K/L/U/I/O 操作 2P。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls-card hidden" id="guestControls">
+        <div class="dpad">
+          <button data-code="ArrowUp" aria-label="上">▲</button>
+          <button data-code="ArrowLeft" aria-label="左">◀</button>
+          <button data-code="ArrowDown" aria-label="下">▼</button>
+          <button data-code="ArrowRight" aria-label="右">▶</button>
+        </div>
+        <div class="action-grid">
+          <button data-code="Numpad1"><span>J</span>轻拳</button>
+          <button data-code="Numpad2"><span>K</span>轻脚</button>
+          <button data-code="Numpad3"><span>L</span>闪避</button>
+          <button data-code="Numpad4"><span>U</span>重拳</button>
+          <button data-code="Numpad5"><span>I</span>重脚</button>
+          <button data-code="Numpad6"><span>O</span>爆气</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/g/kof-wing/app.js"></script>
+</body>
+</html>

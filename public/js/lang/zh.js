@@ -419,6 +419,8 @@
     'ddz_seconds': '秒',
     'ddz_time_up': '时间到，自动不出',
     'ddz_total_rounds': '总局数',
+    'ddz_total_rounds_1': '1局',
+    'ddz_play_time_0': '不限时',
     'ddz_total_rounds_12': '12局',
     'ddz_total_rounds_3': '3局',
     'ddz_total_rounds_6': '6局',

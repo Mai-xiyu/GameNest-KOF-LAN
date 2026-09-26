@@ -5,7 +5,15 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('node:child_process');
+const { createStore, SESSION_AGE_MS } = require('./platform/store');
+const { createBilliardsProxy } = require('./deploy/billiards-proxy');
+const { createStarlinerProxy } = require('./deploy/starliner-proxy');
+const { createOnenightProxy } = require('./deploy/onenight-proxy');
+const { createMamahjongProxy } = require('./deploy/mamahjong-proxy');
+const { createKofWingIntegration } = require('./deploy/kof-wing-integration');
 const startupLogPath = path.join(__dirname, 'android-startup.log');
+const store = createStore(process.env.DATA_DIR || path.join(__dirname, 'data'));
 
 // Language packs
 const SERVER_LANGS = {
@@ -36,6 +44,8 @@ let activePort = PORT;
 
 // Load game registry
 const gameRegistry = Object.create(null);
+const builtInPrototypesEnabled = process.env.ENABLE_BUILTIN_PROTOTYPES === '1';
+const approvedEmbeddedIntegrations = new Set(['checkers']);
 const gamesDir = path.join(__dirname, 'games');
 // Temporary startup isolation for Android crash triage.
 // If this server boots with registries disabled, a specific module load is the culprit.
@@ -84,6 +94,223 @@ if (!process.env.ANDROID_SKIP_REGISTRY_LOAD) {
 
 logStep('[android-node] server.js init express app');
 const app = express();
+function sessionFromRequest(req) {
+  const cookie = (req.headers.cookie || '').split(';').map(part => part.trim())
+    .find(part => part.startsWith('gn_session='));
+  return cookie ? store.session(cookie.slice('gn_session='.length)) : null;
+}
+
+function sameOrigin(req) {
+  return !req.headers.origin || req.headers.origin === `${req.protocol}://${req.headers.host}`;
+}
+
+function setSessionCookie(req, res, token) {
+  res.setHeader('Set-Cookie', `gn_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_AGE_MS / 1000}${req.secure ? '; Secure' : ''}`);
+}
+
+app.post('/api/session', (req, res) => {
+  if (!sameOrigin(req)) return res.sendStatus(403);
+  let player = sessionFromRequest(req);
+  if (!player) {
+    const created = store.newSession();
+    player = created.player;
+    setSessionCookie(req, res, created.token);
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(player);
+});
+
+app.post('/api/me/recovery-code', (req, res) => {
+  if (!sameOrigin(req)) return res.sendStatus(403);
+  const player = sessionFromRequest(req);
+  if (!player) return res.sendStatus(401);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ code: store.newRecoveryCode(player.playerId) });
+});
+
+app.post('/api/recover', express.json({ limit: '1kb' }), (req, res) => {
+  if (!sameOrigin(req)) return res.sendStatus(403);
+  const recovered = store.recover(req.body?.code);
+  if (!recovered) return res.sendStatus(401);
+  for (const client of wss.clients) {
+    if (client.playerId === recovered.player.playerId) client.terminate();
+  }
+  if (starlinerChild?.connected) {
+    starlinerChild.send({ type: 'revoke-player', playerId: recovered.player.playerId });
+  }
+  if (onenightChild?.connected) {
+    onenightChild.send({ type: 'revoke-player', playerId: recovered.player.playerId });
+  }
+  if (kofWingIntegration) {
+    for (const client of kofWingIntegration.websocketServer.clients) {
+      if (client.player?.playerId === recovered.player.playerId) client.close(4001, 'Platform session revoked');
+    }
+  }
+  setSessionCookie(req, res, recovered.token);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(recovered.player);
+});
+
+app.get('/api/me/stats', (req, res) => {
+  const player = sessionFromRequest(req);
+  if (!player) return res.sendStatus(401);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ player, stats: store.stats(player.playerId) });
+});
+
+app.get('/api/leaderboard', (req, res) => {
+  const faction = req.query.faction;
+  if (faction !== 'landlord' && faction !== 'farmers') return res.sendStatus(400);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ gameId: 'doudizhu', mode: 'classic', ruleVersion: 'doudizhu-v1',
+    playerCount: 3, faction, trustLevel: 'server_validated', period: 'all-time',
+    ranking: store.leaderboard(faction) });
+});
+
+const billiardsPort = Number(process.env.BILLIARDS_PORT || 8188);
+const billiardsProxy = createBilliardsProxy(billiardsPort, sessionFromRequest, (externalId, playerId) => {
+  store.linkExternal('billiards', externalId, playerId);
+});
+app.use('/g/billiards', (req, res) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
+    const created = store.newSession();
+    setSessionCookie(req, res, created.token);
+    req.headers.cookie = `gn_session=${created.token}`;
+  }
+  billiardsProxy.request(req, res);
+});
+
+const starlinerPort = Number(process.env.STARLINER_PORT || 8189);
+const starlinerProxy = createStarlinerProxy(starlinerPort, sessionFromRequest);
+if (process.env.STARLINER_DIR && process.env.ENABLE_STARLINER_PREVIEW === '1') app.use('/g/starliner', (req, res) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
+    const created = store.newSession();
+    setSessionCookie(req, res, created.token);
+    req.headers.cookie = `gn_session=${created.token}`;
+  }
+  starlinerProxy.request(req, res);
+});
+
+const onenightPort = Number(process.env.ONENIGHT_PORT || 8191);
+const onenightProxy = createOnenightProxy(onenightPort, sessionFromRequest);
+if (process.env.ONENIGHT_DIR && process.env.ENABLE_ONENIGHT_PREVIEW === '1') app.use('/g/onenight', (req, res) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
+    const created = store.newSession();
+    setSessionCookie(req, res, created.token);
+    req.headers.cookie = `gn_session=${created.token}`;
+  }
+  onenightProxy.request(req, res);
+});
+
+const mamahjongPort = Number(process.env.MAMAHJONG_PORT || 8190);
+const mamahjongProxy = createMamahjongProxy(
+  mamahjongPort,
+  sessionFromRequest,
+  (externalId, playerId) => store.linkExternal('mamahjong', externalId, playerId),
+  process.env.DATA_DIR || path.join(__dirname, 'data'),
+);
+if (process.env.MAMAHJONG_DIR) app.use('/g/mamahjong', (req, res) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
+    const created = store.newSession();
+    setSessionCookie(req, res, created.token);
+    req.headers.cookie = `gn_session=${created.token}`;
+  }
+  mamahjongProxy.request(req, res);
+});
+
+const defaultKofWingDirectory = path.join(__dirname, 'output', 'kof-wing');
+const kofWingDirectory = Object.prototype.hasOwnProperty.call(process.env, 'KOF_WING_DIR')
+  ? process.env.KOF_WING_DIR
+  : (fs.existsSync(defaultKofWingDirectory) ? defaultKofWingDirectory : '');
+const kofWingIntegration = createKofWingIntegration({
+  assetsDirectory: kofWingDirectory,
+  sessionFromRequest,
+});
+if (kofWingIntegration.bundle.configured) app.use('/g/kof-wing', (req, res) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
+    const created = store.newSession();
+    setSessionCookie(req, res, created.token);
+    req.headers.cookie = `gn_session=${created.token}`;
+  }
+  kofWingIntegration.request(req, res);
+});
+
+app.get('/healthz', (req, res) => {
+  const healthy = Object.keys(gameRegistry).length > 0;
+  res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'unavailable' });
+});
+
+function probeLocalHttp(port, timeoutMs = 300) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return Promise.resolve(false);
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = available => {
+      if (settled) return;
+      settled = true;
+      request.destroy();
+      resolve(available);
+    };
+    const request = http.get({ hostname: '127.0.0.1', port, path: '/' }, response => {
+      response.resume();
+      finish(response.statusCode >= 200 && response.statusCode < 400);
+    });
+    request.setTimeout(timeoutMs, () => finish(false));
+    request.on('error', () => finish(false));
+  });
+}
+
+app.get('/api/integrations', async (req, res) => {
+  const billiardsConfigured = Boolean(process.env.BILLIARDS_DIR);
+  const mamahjongConfigured = Boolean(process.env.MAMAHJONG_DIR);
+  const starlinerConfigured = Boolean(process.env.STARLINER_DIR) && process.env.ENABLE_STARLINER_PREVIEW === '1';
+  const onenightConfigured = Boolean(process.env.ONENIGHT_DIR) && process.env.ENABLE_ONENIGHT_PREVIEW === '1';
+  const [billiardsAvailable, mamahjongAvailable, starlinerAvailable, onenightAvailable] = await Promise.all([
+    billiardsConfigured ? probeLocalHttp(billiardsPort) : false,
+    mamahjongConfigured ? probeLocalHttp(mamahjongPort) : false,
+    starlinerConfigured ? probeLocalHttp(starlinerPort) : false,
+    onenightConfigured ? probeLocalHttp(onenightPort) : false,
+  ]);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    integrations: {
+      billiards: {
+        configured: billiardsConfigured,
+        available: billiardsAvailable,
+        enabled: billiardsConfigured && billiardsAvailable,
+        entry: '/g/billiards/',
+        status: 'preview',
+      },
+      'mahjong-mamahjong': {
+        configured: mamahjongConfigured,
+        available: mamahjongAvailable,
+        enabled: mamahjongConfigured && mamahjongAvailable,
+        entry: '/g/mamahjong/',
+        status: 'preview',
+      },
+      'social-starliner': {
+        configured: starlinerConfigured,
+        available: starlinerAvailable,
+        enabled: starlinerConfigured && starlinerAvailable,
+        entry: '/g/starliner/',
+        status: 'preview',
+      },
+      'social-onenight': {
+        configured: onenightConfigured,
+        available: onenightAvailable,
+        enabled: onenightConfigured && onenightAvailable,
+        entry: '/g/onenight/',
+        status: 'preview',
+      },
+      'kof-wing': {
+        configured: kofWingIntegration.bundle.configured,
+        available: kofWingIntegration.bundle.available,
+        enabled: kofWingIntegration.bundle.available,
+        entry: '/g/kof-wing/',
+        status: 'preview',
+      },
+    },
+  });
+});
 // gzip text-based assets (HTML/CSS/JSON/JS). PNG/JPG/WebP are already compressed
 // so the filter skips them to save CPU on every request.
 const compression = require('compression');
@@ -271,7 +498,227 @@ app.post('/api/debug/room/:roomId/forceWin', express.json(), (req, res) => {
 
 logStep('[android-node] server.js init http/ws server');
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+  if (process.env.MAMAHJONG_DIR && req.url.startsWith('/g/mamahjong/api/v1/ws?')) {
+    mamahjongProxy.upgrade(req, socket, head);
+    return;
+  }
+  if (process.env.STARLINER_DIR && process.env.ENABLE_STARLINER_PREVIEW === '1' && req.url === '/g/starliner/ws') {
+    starlinerProxy.upgrade(req, socket, head);
+    return;
+  }
+  if (process.env.ONENIGHT_DIR && process.env.ENABLE_ONENIGHT_PREVIEW === '1' && req.url === '/g/onenight/ws') {
+    onenightProxy.upgrade(req, socket, head);
+    return;
+  }
+  if (req.url.startsWith('/g/billiards/ws?')) {
+    billiardsProxy.upgrade(req, socket, head);
+    return;
+  }
+  if (req.url === '/g/kof-wing/ws') {
+    kofWingIntegration.upgrade(req, socket, head);
+    return;
+  }
+  if (req.url !== '/') {
+    socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+});
+
+let billiardsChild;
+let billiardsRestarts = 0;
+let stopping = false;
+function startBilliards() {
+  if (!process.env.BILLIARDS_DIR || stopping) return;
+  billiardsChild = spawn(process.execPath, [path.join(__dirname, 'deploy/billiards-service.mjs')], {
+    env: process.env,
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  const child = billiardsChild;
+  child.on('message', message => {
+    if (child !== billiardsChild || message?.type !== 'billiards-finished') return;
+    try {
+      if (!/^[0-9a-f-]{36}$/i.test(message.matchId) ||
+          !['eight', 'snooker'].includes(message.mode) ||
+          ![0, 1, null].includes(message.winner) ||
+          !Array.isArray(message.players) || message.players.length !== 2 ||
+          message.players[0].userId === message.players[1].userId) return;
+      const players = message.players.map((entry, index) => ({
+        playerId: store.externalPlayer('billiards', entry.userId),
+        nickname: String(entry.nickname).slice(0, 32),
+        faction: `player-${index + 1}`,
+        outcome: message.winner === null ? 'draw' : message.winner === index ? 'win' : 'loss',
+      }));
+      if (players.some(entry => !entry.playerId)) return;
+      store.record({
+        matchId: message.matchId, roomId: message.roomId, gameId: 'billiards',
+        gameVersion: 'axfsz-ec9a66ac', mode: message.mode, ruleVersion: 'upstream-ec9a66ac',
+        configJson: JSON.stringify({ mode: message.mode, players: 2 }),
+        playerCount: 2, humanCount: 2, trustLevel: 'casual',
+        startedAt: Number.isFinite(message.startedAt) ? message.startedAt : Date.now(), players,
+      });
+    } catch (error) {
+      console.error('Failed to record billiards result:', error);
+    }
+  });
+  billiardsChild.on('error', error => console.error('Billiards service error:', error));
+  billiardsChild.on('exit', (code, signal) => {
+    billiardsChild = null;
+    if (stopping) return;
+    console.error('Billiards service exited:', code, signal);
+    if (++billiardsRestarts <= 3) setTimeout(startBilliards, 2000).unref();
+  });
+}
+startBilliards();
+
+let starlinerChild;
+let starlinerRestarts = 0;
+function startStarliner() {
+  if (!process.env.STARLINER_DIR || process.env.ENABLE_STARLINER_PREVIEW !== '1' || stopping) return;
+  starlinerChild = spawn(process.execPath, ['server.js'], {
+    cwd: process.env.STARLINER_DIR,
+    env: { ...process.env, PORT: String(starlinerPort) },
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  const child = starlinerChild;
+  child.on('message', message => {
+    if (child !== starlinerChild || message?.type !== 'starliner-finished') return;
+    try {
+      if (!/^[0-9a-f-]{36}$/i.test(message.matchId) ||
+          !/^[A-Z0-9]{5}$/.test(message.roomId) ||
+          !['crew', 'sab'].includes(message.winner) ||
+          !Number.isFinite(message.startedAt) || message.startedAt > Date.now() ||
+          !Array.isArray(message.players) || message.players.length < 3 || message.players.length > 10) return;
+      const ids = new Set();
+      const players = message.players.map(entry => {
+        if (!/^[0-9a-f-]{36}$/i.test(entry.playerId) || ids.has(entry.playerId) ||
+            !['crew', 'sab'].includes(entry.faction)) throw new Error('Invalid Starliner participant');
+        ids.add(entry.playerId);
+        return {
+          playerId: entry.playerId, nickname: String(entry.nickname).slice(0, 32),
+          faction: entry.faction, outcome: entry.faction === message.winner ? 'win' : 'loss',
+        };
+      });
+      const sabCount = players.filter(entry => entry.faction === 'sab').length;
+      if (sabCount !== Math.max(1, Math.floor(players.length / 5))) return;
+      store.record({
+        matchId: message.matchId, roomId: message.roomId, gameId: 'starliner',
+        gameVersion: '367f2f33', mode: 'map-action', ruleVersion: 'starliner-adapter-v2',
+        configJson: JSON.stringify({ players: players.length, tasksPerCrew: 5 }),
+        playerCount: players.length, humanCount: players.length, trustLevel: 'casual',
+        startedAt: message.startedAt, players,
+      });
+    } catch (error) {
+      console.error('Failed to record Starliner result:', error);
+    }
+  });
+  child.on('error', error => console.error('Starliner service error:', error));
+  child.on('exit', (code, signal) => {
+    if (child !== starlinerChild) return;
+    starlinerChild = null;
+    if (stopping) return;
+    console.error('Starliner service exited:', code, signal);
+    if (++starlinerRestarts <= 3) setTimeout(startStarliner, 2000).unref();
+  });
+}
+startStarliner();
+
+let onenightChild;
+let onenightRestarts = 0;
+function startOnenight() {
+  if (!process.env.ONENIGHT_DIR || process.env.ENABLE_ONENIGHT_PREVIEW !== '1' || stopping) return;
+  onenightChild = spawn(process.execPath, ['server/dist/index.js'], {
+    cwd: process.env.ONENIGHT_DIR,
+    env: { ...process.env, PORT: String(onenightPort) },
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  const child = onenightChild;
+  child.on('message', message => {
+    if (child !== onenightChild || message?.type !== 'onenight-finished') return;
+    try {
+      const allowedRoles = new Set(['WEREWOLF', 'MINION', 'TANNER', 'DOPPELGANGER', 'SEER',
+        'ROBBER', 'TROUBLEMAKER', 'DRUNK', 'INSOMNIAC', 'MASON', 'VILLAGER', 'HUNTER', 'BODYGUARD']);
+      const allowedFactions = new Set(['STRAT_VILLAGE', 'STRAT_WEREWOLF', 'STRAT_MINION', 'STRAT_TANNER']);
+      if (!/^[0-9a-f-]{36}$/i.test(message.matchId) || !/^[A-Z0-9]{4}$/.test(message.roomId) ||
+          !Number.isFinite(message.startedAt) || message.startedAt > Date.now() ||
+          !Array.isArray(message.players) || message.players.length < 3 || message.players.length > 10 ||
+          !Array.isArray(message.roleConfig) || message.roleConfig.length !== message.players.length + 3 ||
+          !message.roleConfig.every(role => allowedRoles.has(role)) ||
+          !Array.isArray(message.winningTeams) ||
+          !message.winningTeams.every(faction => allowedFactions.has(faction))) return;
+      const winningTeams = new Set(message.winningTeams);
+      if (winningTeams.size !== message.winningTeams.length) return;
+      const ids = new Set();
+      const players = message.players.map(entry => {
+        if (!/^[0-9a-f-]{36}$/i.test(entry.playerId) || ids.has(entry.playerId) ||
+            !allowedRoles.has(entry.roleId) || !allowedFactions.has(entry.faction)) {
+          throw new Error('Invalid One Night participant');
+        }
+        ids.add(entry.playerId);
+        return {
+          playerId: entry.playerId,
+          nickname: String(entry.nickname).slice(0, 32),
+          faction: entry.faction,
+          outcome: winningTeams.has(entry.faction) ? 'win' : 'loss',
+        };
+      });
+      store.record({
+        matchId: message.matchId, roomId: message.roomId, gameId: 'social-onenight',
+        gameVersion: '6a60bc96', mode: 'tabletop', ruleVersion: 'onenight-adapter-v1',
+        configJson: JSON.stringify({ players: players.length, roles: [...message.roleConfig].sort() }),
+        playerCount: players.length, humanCount: players.length, trustLevel: 'casual',
+        startedAt: message.startedAt, players,
+      });
+    } catch (error) {
+      console.error('Failed to record One Night result:', error);
+    }
+  });
+  child.on('error', error => console.error('One Night Werewolf service error:', error));
+  child.on('exit', (code, signal) => {
+    if (child !== onenightChild) return;
+    onenightChild = null;
+    if (stopping) return;
+    console.error('One Night Werewolf service exited:', code, signal);
+    if (++onenightRestarts <= 3) setTimeout(startOnenight, 2000).unref();
+  });
+}
+startOnenight();
+
+let mamahjongChild;
+let mamahjongRestarts = 0;
+function startMamahjong() {
+  if (!process.env.MAMAHJONG_DIR || stopping) return;
+  const executable = path.join(
+    process.env.MAMAHJONG_DIR,
+    process.platform === 'win32' ? 'mamahjong-server.exe' : 'mamahjong-server',
+  );
+  const gameWebDir = path.join(process.env.MAMAHJONG_DIR, 'game');
+  const dataDir = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'mamahjong');
+  mamahjongChild = spawn(executable, [], {
+    cwd: process.env.MAMAHJONG_DIR,
+    env: {
+      ...process.env,
+      MAMAHJONG_BIND_ADDRESS: `127.0.0.1:${mamahjongPort}`,
+      MAMAHJONG_DATA_DIR: dataDir,
+      MAMAHJONG_GAME_WEB_DIR: gameWebDir,
+      MAMAHJONG_ADMIN_WEB_DIR: gameWebDir,
+    },
+    stdio: ['ignore', 'inherit', 'inherit'],
+    windowsHide: true,
+  });
+  const child = mamahjongChild;
+  child.on('error', error => console.error('MaMahjong service error:', error));
+  child.on('exit', (code, signal) => {
+    if (child !== mamahjongChild) return;
+    mamahjongChild = null;
+    if (stopping) return;
+    console.error('MaMahjong service exited:', code, signal);
+    if (++mamahjongRestarts <= 3) setTimeout(startMamahjong, 2000).unref();
+  });
+}
+startMamahjong();
 wss.on('error', (err) => {
   if (isRecoverablePortError(err)) return;
   console.error('WebSocket server error:', err.message);
@@ -312,7 +759,8 @@ function createRoom(ws, gameType, lang) {
     console.error('createState failed for game "' + gameType + '":', e && e.message);
     return null;
   }
-  const roomId = generateRoomId();
+  let roomId;
+  do { roomId = generateRoomId(); } while (rooms.has(roomId));
   const room = {
     game: gameType,
     maxPlayers: gameMod.maxPlayers,
@@ -330,7 +778,7 @@ function createRoom(ws, gameType, lang) {
     readyPlayers: new Set(),   // Set of player indices that are ready
     options: {},               // Game-specific options (e.g. requireBreak)
   };
-  room.players.set(ws, { name: 'Player 1', index: 0, avatar: '😊', resumeToken: crypto.randomUUID(), disconnectedAt: null });
+  room.players.set(ws, { name: ws.nickname || '玩家', index: 0, playerId: ws.playerId, avatar: '😊', resumeToken: crypto.randomUUID(), disconnectedAt: null });
   rooms.set(roomId, room);
   return { roomId, room };
 }
@@ -417,21 +865,32 @@ function skipDisconnectedTurn(room) {
   return false;
 }
 
+function gameView(room, playerIndex) {
+  if (!room.state) return null;
+  const gameMod = gameRegistry[room.game];
+  if (room.game === 'minesweeper' && gameMod.playerBoardView) {
+    return Object.assign({}, room.state, { board: gameMod.playerBoardView(room.state, playerIndex) });
+  }
+  if (gameMod.playerView) return gameMod.playerView(room.state, playerIndex);
+  return room.state;
+}
+
 function broadcastGameView(room, msgType) {
+  recordDoudizhuResult(room);
+  recordCheckersResult(room);
   const t = msgType || 'game_state';
   const gameMod = gameRegistry[room.game];
   const players = roomPlayersList(room);
   if (room.game === 'minesweeper' && gameMod.playerBoardView) {
     for (const [client, info] of room.players) {
       if (client.readyState === 1) {
-        const viewState = Object.assign({}, room.state, { board: gameMod.playerBoardView(room.state, info.index) });
-        client.send(JSON.stringify({ type: t, state: viewState, players }));
+        client.send(JSON.stringify({ type: t, state: gameView(room, info.index), players }));
       }
     }
   } else if (gameMod.playerView) {
     for (const [client, info] of room.players) {
       if (client.readyState === 1) {
-        client.send(JSON.stringify({ type: t, state: gameMod.playerView(room.state, info.index), players }));
+        client.send(JSON.stringify({ type: t, state: gameView(room, info.index), players }));
       }
     }
   } else {
@@ -848,7 +1307,17 @@ function scheduleBattleshipPlacements(room) {
 
 // ---- WebSocket Handler ----
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  const origin = req.headers.origin;
+  const player = sessionFromRequest(req);
+  if (!player || (origin && origin !== `${req.socket.encrypted ? 'https' : 'http'}://${req.headers.host}`)) {
+    ws.close(1008, 'Session required');
+    return;
+  }
+  ws.playerId = player.playerId;
+  ws.nickname = player.nickname;
+  ws.sessionToken = (req.headers.cookie || '').split(';').map(part => part.trim())
+    .find(part => part.startsWith('gn_session=')).slice('gn_session='.length);
   ws._isAlive = true;
   ws.on('pong', () => { ws._isAlive = true; });
   ws.on('error', () => {});
@@ -859,10 +1328,18 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
     const { type, data } = msg;
+    if (!store.session(ws.sessionToken)) {
+      ws.close(1008, 'Session expired');
+      return;
+    }
 
     // --- create_room ---
     if (type === 'create_room') {
       const { game, lang } = data || {};
+      if (!builtInPrototypesEnabled && !approvedEmbeddedIntegrations.has(game)) {
+        ws.send(JSON.stringify({ type: 'error', message: '内置游戏原型已停用，请从大厅进入开源游戏接入。' }));
+        return;
+      }
       if (!gameRegistry[game]) {
         ws.send(JSON.stringify({ type: 'error', message: serverT(currentRoom, 'invalid_game_type') }));
         return;
@@ -1001,11 +1478,12 @@ wss.on('connection', (ws) => {
       }
       if (lang && !room._lang) room._lang = lang;
       // Resume an existing seat after returning to the lobby / temporary disconnect.
-      const resumable = resumeToken && Array.from(room.players.entries())
-        .find(([, info]) => info.resumeToken === resumeToken);
+      const resumable = Array.from(room.players.entries())
+        .find(([, info]) => info.playerId === ws.playerId && (!resumeToken || info.resumeToken === resumeToken));
       if (resumable) {
         const oldWs = resumable[0];
         const info = resumable[1];
+        info.name = ws.nickname || info.name;
         if (info._disconnectTimer) clearTimeout(info._disconnectTimer);
         info._disconnectTimer = null;
         info.disconnectedAt = null;
@@ -1015,7 +1493,7 @@ wss.on('connection', (ws) => {
         currentRoomId = roomId;
         currentRoom = room;
         ws.send(JSON.stringify({ type: 'room_joined', roomId, game: room.game, maxPlayers: room.maxPlayers,
-          playerIndex: info.index, players: roomPlayersList(room), state: room.state, phase: room.phase,
+          playerIndex: info.index, players: roomPlayersList(room), state: gameView(room, info.index), phase: room.phase,
           options: room.options, resumeToken: info.resumeToken }));
         sendToRoom(room, {
           type: 'room_update',
@@ -1037,10 +1515,14 @@ wss.on('connection', (ws) => {
           maxPlayers: room.maxPlayers,
           playerIndex: existing[1].index,
           players: roomPlayersList(room),
-          state: room.state,
+          state: gameView(room, existing[1].index),
           phase: room.phase,
           options: room.options,
         }));
+        return;
+      }
+      if (room.phase === 'playing') {
+        ws.send(JSON.stringify({ type: 'error', code: 'GAME_IN_PROGRESS', message: serverT(room, 'game_started') }));
         return;
       }
       // Clean up stale connections (WS closed but close event hasn't fired yet)
@@ -1075,7 +1557,7 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'error', message: serverT(currentRoom, 'room_full') }));
         return;
       }
-      room.players.set(ws, { name: `Player ${idx + 1}`, index: idx, avatar: '😊', resumeToken: crypto.randomUUID(), disconnectedAt: null });
+      room.players.set(ws, { name: ws.nickname || `玩家${idx + 1}`, index: idx, playerId: ws.playerId, avatar: '😊', resumeToken: crypto.randomUUID(), disconnectedAt: null });
       if (room.players.size === 1) room.hostWS = ws;
       currentRoomId = roomId;
       currentRoom = room;
@@ -1089,7 +1571,7 @@ wss.on('connection', (ws) => {
         maxPlayers: room.maxPlayers,
         playerIndex: idx,
         players: roomPlayersList(room),
-        state: room.state,
+        state: gameView(room, idx),
         phase: room.phase,
         options: room.options,
         resumeToken: room.players.get(ws).resumeToken,
@@ -1150,12 +1632,21 @@ wss.on('connection', (ws) => {
         return;
       }
       const allReady = Array.from(currentRoom.players.values())
-        .every(p => currentRoom.readyPlayers.has(p.index));
+        .every(p => currentRoom.readyPlayers.has(p.index) && (currentRoom.game !== 'doudizhu' || !p.disconnectedAt));
       if (!allReady) {
         ws.send(JSON.stringify({ type: 'error', message: serverT(currentRoom, 'all_ready_required') }));
         return;
       }
 
+      if (!currentRoom.state) {
+        try {
+          currentRoom.state = gameMod.createState();
+        } catch (error) {
+          console.error('Failed to create game state:', error);
+          ws.send(JSON.stringify({ type: 'error', message: serverT(currentRoom, 'create_room_failed') }));
+          return;
+        }
+      }
       currentRoom.phase = 'playing';
       applyRuntimeState(currentRoom, totalPlayers);
       // 麻将首局随机坐庄：不让房主默认当庄先摸牌先出牌
@@ -1165,6 +1656,7 @@ wss.on('connection', (ws) => {
       if (gameMod && gameMod.initGame) {
         gameMod.initGame(currentRoom.state, totalPlayers);
       }
+      beginMatch(currentRoom);
       if (currentRoom.game === 'drawguess') scheduleDrawguessTimer(currentRoom); // 在广播前写入 stepDeadline
 
       broadcastGameView(currentRoom, 'game_started');
@@ -1278,6 +1770,7 @@ wss.on('connection', (ws) => {
       const { name } = data || {};
       if (name && name.trim().length > 0 && name.trim().length <= 8) {
         info.name = name.trim();
+        store.rename(info.playerId, info.name);
         broadcastRoom(currentRoom, { type: 'room_update', phase: currentRoom.phase, players: roomPlayersList(currentRoom) });
       }
       return;
@@ -1299,6 +1792,7 @@ wss.on('connection', (ws) => {
     // --- game_move ---
     if (type === 'game_move') {
       if (!currentRoom) return;
+      if (currentRoom.phase !== 'playing' || !currentRoom.state) return;
       const gameMod = gameRegistry[currentRoom.game];
       if (!gameMod) return;
       const playerInfo = currentRoom.players.get(ws);
@@ -1395,6 +1889,7 @@ wss.on('connection', (ws) => {
       if (gameMod && gameMod.initGame) {
         gameMod.initGame(currentRoom.state, totalPlayers);
       }
+      beginMatch(currentRoom);
 
       if (currentRoom.game === 'drawguess') scheduleDrawguessTimer(currentRoom);
       currentRoom.phase = 'playing';
@@ -1411,6 +1906,7 @@ wss.on('connection', (ws) => {
       if (!currentRoom) return;
       const info = currentRoom.players.get(ws);
       if (!info) return;
+      if (currentRoom.match) currentRoom.match.competitiveEligible = false;
       // Don't delete immediately — start grace timer so the player can resume
       info.disconnectedAt = Date.now();
       if (info._disconnectTimer) clearTimeout(info._disconnectTimer);
@@ -1437,7 +1933,9 @@ wss.on('connection', (ws) => {
     // --- return_to_room ---
     if (type === 'return_to_room') {
       if (!currentRoom) return;
+      if (ws !== currentRoom.hostWS) return;
       currentRoom.phase = 'lobby';
+      currentRoom.match = null;
       currentRoom.readyPlayers = new Set();
       currentRoom.state = null;
       clearAllRoomTimers(currentRoom);
@@ -1487,6 +1985,7 @@ wss.on('connection', (ws) => {
     if (currentRoom && currentRoomId) {
       const info = currentRoom.players.get(ws);
       if (!info) return;
+      if (currentRoom.match) currentRoom.match.competitiveEligible = false;
       info.disconnectedAt = Date.now();
       if (info._disconnectTimer) clearTimeout(info._disconnectTimer);
       info._disconnectTimer = setTimeout(() => {
@@ -1593,5 +2092,145 @@ function startServer(port, attempt = 0) {
 }
 
 startServer(PORT);
+
+function stopServer() {
+  stopping = true;
+  let billiardsStopped = Promise.resolve();
+  let starlinerStopped = Promise.resolve();
+  let onenightStopped = Promise.resolve();
+  let mamahjongStopped = Promise.resolve();
+  if (mamahjongChild) {
+    const child = mamahjongChild;
+    mamahjongStopped = new Promise(resolve => child.once('exit', resolve));
+    child.kill('SIGTERM');
+  }
+  if (starlinerChild) {
+    const child = starlinerChild;
+    starlinerStopped = new Promise(resolve => child.once('exit', resolve));
+    child.kill('SIGTERM');
+  }
+  if (onenightChild) {
+    const child = onenightChild;
+    onenightStopped = new Promise(resolve => child.once('exit', resolve));
+    child.kill('SIGTERM');
+  }
+  if (billiardsChild) {
+    const child = billiardsChild;
+    billiardsStopped = new Promise(resolve => child.once('exit', resolve));
+    child.kill('SIGTERM');
+  }
+  clearInterval(wssHeartbeat);
+  kofWingIntegration.close();
+  for (const client of wss.clients) client.close(1001, 'Server shutting down');
+  wss.close();
+  server.close(async () => {
+    await billiardsStopped;
+    await starlinerStopped;
+    await onenightStopped;
+    await mamahjongStopped;
+    store.close();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+
+function beginMatch(room) {
+  if (room.game === 'checkers') {
+    room.match = {
+      matchId: crypto.randomUUID(),
+      startedAt: Date.now(),
+      players: Array.from(room.players.values()).map(info => ({
+        playerId: info.playerId, nickname: info.name, index: info.index,
+      })),
+      playerCount: room.players.size + room.bots.size,
+    };
+    return;
+  }
+  if (room.game !== 'doudizhu') return;
+  room.match = {
+    matchId: crypto.randomUUID(),
+    startedAt: Date.now(),
+    competitiveEligible: room.bots.size === 0 && room.players.size === 3,
+    players: Array.from(room.players.values()).map(info => ({
+      playerId: info.playerId, nickname: info.name, index: info.index,
+    })),
+  };
+}
+
+function recordCheckersResult(room) {
+  if (room.game !== 'checkers' || !room.match || room.state?.winner == null) return;
+  const match = room.match;
+  try {
+    store.record({
+      matchId: match.matchId,
+      roomId: room._roomId,
+      gameId: 'checkers',
+      gameVersion: 'gamenest-c9f1207',
+      mode: 'english-draughts-8x8',
+      ruleVersion: 'checkers-c9f1207-v1',
+      configJson: JSON.stringify({ board: '8x8', mandatoryCapture: true, playerCount: match.playerCount }),
+      playerCount: match.playerCount,
+      humanCount: match.players.length,
+      trustLevel: 'casual',
+      startedAt: match.startedAt,
+      players: match.players.map(player => ({
+        playerId: player.playerId,
+        nickname: player.nickname,
+        faction: player.index === 0 ? 'red' : 'black',
+        outcome: room.state.winner === -1 ? 'draw' : room.state.winner === player.index ? 'win' : 'loss',
+      })),
+    });
+  } catch (error) {
+    console.error('Failed to record checkers result:', error);
+  } finally {
+    room.match = null;
+  }
+}
+
+function recordDoudizhuResult(room) {
+  if (room.game !== 'doudizhu' || !room.match || room.state?.phase !== 'over') return;
+  const state = room.state;
+  const match = room.match;
+  const humanCount = match.players.length;
+  const scores = state.cumulativeScore || [];
+  const configJson = JSON.stringify({
+    firstCaller: state.firstCaller || 'random',
+    allowDouble: !!state.allowDouble,
+    allowShowHand: !!state.allowShowHand,
+    playTimeLimit: state.playTimeLimit || 0,
+    totalRounds: state.totalRounds,
+  });
+  const topScore = Math.max(...scores);
+  const winners = state.totalRounds > 1
+    ? scores.map((score, index) => score === topScore ? index : -1).filter(index => index >= 0)
+    : state.winner === -2 ? [state.landlord] : [0, 1, 2].filter(index => index !== state.landlord);
+  try {
+    store.record({
+      matchId: match.matchId,
+      roomId: room._roomId,
+      gameId: room.game,
+      gameVersion: 'GameNest-c9f1207',
+      mode: `${state.bidMode || 'rob'}-${state.totalRounds > 1 ? 'multi' : 'single'}`,
+      ruleVersion: 'doudizhu-v1',
+      configJson,
+      playerCount: state._playerCount,
+      humanCount,
+      trustLevel: match.competitiveEligible ? 'server_validated' : 'casual',
+      startedAt: match.startedAt,
+      players: match.players.map(player => ({
+        playerId: player.playerId,
+        nickname: player.nickname,
+        faction: state.totalRounds > 1 ? 'mixed' : player.index === state.landlord ? 'landlord' : 'farmers',
+        outcome: winners.includes(player.index) ? 'win' : 'loss',
+      })),
+    });
+    room.match = null;
+  } catch (error) {
+    console.error('Failed to save match:', error);
+  }
+}
+
+process.once('SIGTERM', stopServer);
+process.once('SIGINT', stopServer);
 
 module.exports = { server, getActivePort: () => activePort };

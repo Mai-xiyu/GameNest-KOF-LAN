@@ -380,6 +380,8 @@
     'ddz_play_time_60': '60s',
     'ddz_play_time_300': '5min',
     'ddz_total_rounds': 'Total Rounds',
+    'ddz_total_rounds_1': '1 round',
+    'ddz_play_time_0': 'No limit',
     'ddz_total_rounds_3': '3 rounds',
     'ddz_total_rounds_6': '6 rounds',
     'ddz_total_rounds_9': '9 rounds',

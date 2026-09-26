@@ -2,6 +2,31 @@
   if (!window.__LANG) window.__LANG = {};
   if (!window.__LANG.en) window.__LANG.en = {};
   window.__LANG.en.catalog = {
+    billiards: {
+      name: 'Online Billiards', subtitle: 'Open-source upstream preview · real-player test pending',
+      description: 'Reuses axfsz/billiards for the table, physics, rules, rooms and synchronization. The adapter only adds platform identity, same-origin HTTP/WS, return-to-lobby and casual records. Two real devices, blocked-WAN and single-image acceptance remain pending; results never enter competitive ranking.',
+      players: '2 players', category: 'Sports', tags: ['billiards', 'open-source upstream', 'integration preview'],
+    },
+    'mahjong-mamahjong': {
+      name: 'MaMahjong multiplayer', subtitle: 'Open-source upstream preview · real-player test pending',
+      description: 'Reuses MaMahjong’s browser client, rooms, authoritative rule engines, synchronization and per-player private-tile projection for four/three-player Riichi, Impact, Sichuan and Wuhan Mahjong. Platform identity, same-origin HTTP/WS, return-to-lobby, Windows archive compatibility and the single-image build are integrated; platform records, multi-device real-player and blocked-WAN acceptance remain pending.',
+      players: '3–4 (source rules)', category: 'Cards & Tiles', tags: ['mahjong', 'open-source upstream', 'integration preview'],
+    },
+    'kof-wing': {
+      name: 'KOF Wing 1.85', subtitle: 'User-supplied local bundle · LAN two-player preview',
+      description: 'Reuses the supplied SWF, characters, combat rules, assets, and Ruffle runtime. The host runs the only authoritative game instance; player two receives its video over LAN-only WebRTC and sends original 2P input through the platform room. Guest audio, host-refresh recovery, two-device real-player and blocked-WAN acceptance remain pending. There is no reliable result API, so records and ranking stay disabled.',
+      players: '1–2 (LAN mode is 2)', category: 'Fighting', tags: ['fighting', 'LAN two-player', 'keyboard'],
+    },
+    'social-starliner': {
+      name: 'Starliner map-action candidate', subtitle: 'Preview adapter · disabled by default',
+      description: 'Map action; code limits rooms to 3–10, four- and ten-session protocol prechecks passed, no real-player test. Touch controls exist but are unverified on phones. In-person discussion recommended; preview has separate public meeting, saboteur faction and eliminated text channels; optional voice untested. Preview can record casual personal results, not competitive ranking. Localization and offline LAN acceptance pending.',
+      category: 'Social Deduction', players: '3–10 (code limit)', tags: ['map action', 'preview candidate'],
+    },
+    'social-onenight': {
+      name: 'One Night Werewolf', subtitle: 'Preview adapter · disabled by default',
+      description: 'Tabletop; reuses the upstream rooms, server-side dealing, night actions, voting, and resolution. Rules limit games to 3–10 players; real-player and mobile acceptance remain pending. In-person discussion is required, with no built-in chat or voice. Platform identity, safe seat reconnection, and personal casual records grouped by final faction are adapted; there is no competitive ranking, and this does not replace a map-action game.',
+      category: 'Social Deduction', players: '3–10 (rule limits)', tags: ['tabletop', 'preview candidate'],
+    },
     tictactoe: {
       name: 'Tic Tac Toe',
       subtitle: 'Three in a row, fastest matchup',
@@ -40,8 +65,8 @@
     },
     doudizhu: {
       name: 'Dou Dizhu',
-      subtitle: 'Bid for landlord, fight for victory',
-      description: 'Classic 3-player climbing game. AI fills in anytime.',
+      subtitle: 'GameNest built-in rules prototype',
+      description: 'Available only as a preview. The release version will reuse an upstream project with complete rules, rooms, and server-side private views.',
       players: '2-3 Players',
       duration: '~10 min',
       category: 'Cards & Tiles',
@@ -139,8 +164,8 @@
     },
     'mahjong-sichuan': {
       name: 'Mahjong',
-      subtitle: 'Sichuan Blood / Cantonese',
-      description: 'National treasure — Sichuan blood battle or Cantonese chicken-style.',
+      subtitle: 'GameNest built-in Mahjong prototype',
+      description: 'The current Sichuan/Cantonese rules are preview-only and have not passed real-player rules acceptance. This is not a release game until a qualified open-source web Mahjong project is integrated.',
       players: '2-4 Players',
       duration: '~20 min',
       category: 'Cards & Tiles',
@@ -193,12 +218,12 @@
     },
     checkers: {
       name: 'Checkers',
-      subtitle: 'Forced captures, king promotion',
-      description: '8×8 draughts with multi-jump and king rules.',
+      subtitle: 'Open-source module preview · real-player test pending',
+      description: 'Reuses the pinned upstream rules, two-player rooms, synchronization, AI, and renderer; platform identity, invites, reconnect, and personal casual results are integrated. Two-device and offline-LAN acceptance remain pending.',
       players: '2',
-      duration: '~10 min',
+      duration: '~10–20 min',
       category: 'Board Games',
-      tags: ['Classic', 'Easy'],
+      tags: ['Checkers', 'Open-source upstream', 'Integration preview'],
     },
     connect4: {
       name: 'Connect Four',

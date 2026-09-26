@@ -73,6 +73,17 @@ If port `3000` is still occupied on Windows:
 taskkill /f /im node.exe
 ```
 
+### Optional KOF Wing 1.85 LAN integration
+
+The KOF Wing adapter reuses an operator-supplied SWF and its bundled Ruffle runtime. These assets are not committed to this repository because no redistribution license was supplied for the game SWF.
+
+```powershell
+npm run prepare:kof-wing -- "C:\path\to\kof_wing_1.85_html5" "output\kof-wing"
+npm start
+```
+
+When the fingerprinted bundle is available, the lobby exposes a runtime-gated KOF preview. The host browser runs the single authoritative game instance; player 2 receives its video over LAN-only WebRTC and sends the original 2P controls through the platform WebSocket room. See [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md) for controls, Docker packaging, validation evidence, and known limits.
+
 ## How It Works
 
 1. Start GameNest on one computer or Android device.
@@ -91,6 +102,7 @@ taskkill /f /im node.exe
 | Party | Monopoly, Flight Chess, Draw & Guess, UNO, Number Bomb, Old Maid, Exploding Kittens, Truth or Dare |
 | Puzzle | Sheep Tile, 24 Game, Sudoku, 2048, Minesweeper Race |
 | Real-time | Suika Battle, Snake Battle |
+| Optional local integrations | KOF Wing 1.85 LAN two-player preview (operator-supplied assets) |
 
 ## Commands
 
@@ -98,6 +110,7 @@ taskkill /f /im node.exe
 npm start             # start the LAN server
 npm test              # run regression tests
 npm run check         # syntax-check project JavaScript
+npm run prepare:kof-wing -- SOURCE DESTINATION # prepare local KOF assets
 npm run test:monopoly # run focused Monopoly tests
 npm run build:desktop # build Windows standalone exe
 ```
@@ -132,10 +145,12 @@ Then open `android/` in Android Studio and run the app. Full setup details live 
 |-- startup-port.js           # port-retry helper required by server.js
 |-- games/                    # game rules and state transitions
 |-- bots/                     # AI move generators
+|-- deploy/                   # adapters for independently packaged games
 |-- lang/                     # server-side text
 |-- public/                   # browser lobby, game shell, renderers, styles, assets
 |-- scripts/                  # smoke simulations and maintenance helpers
 |-- tests/                    # node:test regression suites
+|-- output/                   # ignored local integration bundles
 |-- android/                  # Android Studio wrapper project (incl. nodejs-mobile main.js)
 |-- docs/                     # architecture and release notes
 `-- archive/                  # local archive (not tracked by git)

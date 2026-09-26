@@ -5,6 +5,7 @@ var SUITS = ['s','h','c','d'];
 var RANKS = ['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
 
 exports.name = 'doudizhu';
+exports.minPlayers = 3;
 exports.maxPlayers = 3;
 
 function rankVal(rank) {
@@ -63,6 +64,27 @@ function syncBoard(state) {
     currentRound: state.currentRound || 1,
   };
 }
+
+exports.playerView = function(state, playerIndex) {
+  var view = syncBoard(state);
+  view.hands = state.hands.map(function(hand, index) {
+    return index === playerIndex
+      ? hand.map(function(card) { return { ...card }; })
+      : new Array(hand.length).fill(null);
+  });
+  if (state.phase === 'bidding') {
+    view.bottomCards = new Array(state.bottomCards.length).fill(null);
+  }
+  view.bidMode = state.bidMode;
+  view.playTimeLimit = state.playTimeLimit;
+  view._playerCount = state._playerCount;
+  view.calledPlayers = state.calledPlayers ? state.calledPlayers.slice() : [];
+  view.passedCall = state.passedCall ? state.passedCall.slice() : [];
+  view.landlordCandidate = state.landlordCandidate;
+  view.robAttempts = state.robAttempts ? state.robAttempts.slice() : [];
+  if (state.scores) view.scores = state.scores.slice();
+  return view;
+};
 
 exports.createState = function() {
   var state = {
@@ -454,7 +476,9 @@ exports.handleMove = function(data, state, playerIndex) {
       else state.winner = -3;
       calculatePerRoundScores(state);
       // Multi-round: check if more rounds remain
-      if (state.totalRounds > 1) {
+      if (state.totalRounds <= 1) {
+        state.phase = 'over';
+      } else {
         var wasLastRound = state.currentRound >= state.totalRounds;
         if (wasLastRound) {
           state.phase = 'over';

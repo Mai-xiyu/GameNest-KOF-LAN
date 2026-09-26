@@ -97,11 +97,6 @@ function getForwardDirs(side, type) {
   return [[1,-1],[1,1]]; // black goes down
 }
 
-// All 4 diagonal directions for king
-function getAllDirs(type) {
-  return [[-1,-1],[-1,1],[1,-1],[1,1]];
-}
-
 // ---- Handle Move ----
 
 exports.handleMove = function(data, state, playerIndex) {
@@ -155,8 +150,9 @@ exports.handleMove = function(data, state, playerIndex) {
     }
   }
 
-  // Check for further captures (multi-jump)
-  if (isCapture) {
+  // In English draughts a man that reaches the king row ends its turn.
+  // It may use the new king's backward directions only on its next turn.
+  if (isCapture && !promoted) {
     var afterBoard = state.board;
     var canContinue = false;
     // Check if the piece that just moved can capture again from its new position
@@ -210,7 +206,7 @@ exports.playerView = function(state, playerIndex) {
     moveHistory: state.moveHistory,
     _playerCount: state._playerCount,
   };
-  if (state.winner === null && state.currentPlayer === playerIndex) {
+  if (state.board && state.winner === null && state.currentPlayer === playerIndex) {
     var origin = state.mustCapture ? { row: state._lastCaptureRow, col: state._lastCaptureCol } : null;
     view.legalMoves = getLegalMoves(state.board, playerIndex, state.mustCapture, origin);
   } else {

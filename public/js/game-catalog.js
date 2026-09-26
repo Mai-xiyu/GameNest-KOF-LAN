@@ -56,8 +56,8 @@
     doudizhu: {
       name: '斗地主',
       icon: '♠',
-      subtitle: '叫地主，抢节奏',
-      description: '经典三人扑克，带 AI 也能随时开局。',
+      subtitle: 'GameNest 内置规则原型',
+      description: '仅供当前版本体验；正式版将优先复用已实现完整规则、房间和服务端视图隔离的开源上游。',
       players: '2-3人',
       duration: '约10分钟',
       category: '牌桌竞技',
@@ -199,8 +199,8 @@
     'mahjong-sichuan': {
       name: '麻将',
       icon: '🀄',
-      subtitle: '四川血战 / 广东鸡平胡',
-      description: '国粹麻将，支持四川血战到底与广东鸡平胡两种打法，可自定义规则。',
+      subtitle: 'GameNest 内置麻将原型',
+      description: '当前四川／广东规则仅供体验，未通过真人规则验收；找到合格的开源网页麻将前不作为正式交付。',
       players: '2-4人',
       duration: '约20分钟',
       category: '牌桌竞技',
@@ -280,15 +280,19 @@
     checkers: {
       name: '西洋跳棋',
       icon: '◉',
-      subtitle: '强制吃子，升王反击',
-      description: '8×8 经典跳棋，连吃与升王。',
+      subtitle: '开源模块接入预览 · 待真人验收',
+      description: '复用 GameNest 固定上游的英式跳棋规则、双人房间、WebSocket 同步、AI 与 Canvas 渲染；服务端校验回合、强制吃子、连续跳吃、升王和胜负。已沿用平台身份、邀请与断线回席并接入个人休闲战绩；真人双设备、手机实机、Docker 与阻断公网验收未完成。',
       players: '2人',
-      duration: '约10分钟',
+      duration: '约10–20分钟',
       category: '棋盘对弈',
-      tags: ['经典', '易学'],
+      tags: ['西洋跳棋', '开源上游', '接入预览'],
       featured: false,
       supportsAI: true,
       maxPlayers: 2,
+      status: 'preview',
+      source: 'absswds/GameNest@c9f1207be23012a8cb278f312ccbd81196a760c3',
+      acceptance: 'automated-two-session-only',
+      integrationMode: 'embedded-upstream-module',
     },
     connect4: {
       name: '四子棋',
@@ -424,12 +428,90 @@
       maxPlayers: 10,
       cover: '/assets/game-covers/truthdare.webp'
     },
+    billiards: {
+      name: '在线台球',
+      icon: '●',
+      subtitle: '开源上游接入预览 · 待真人验收',
+      description: '复用 axfsz/billiards 的球桌、物理、规则、房间和同步，仅通过适配层接入平台身份、同源 HTTP/WS、返回大厅和休闲战绩。双真人设备、断公网和单镜像验收未完成，不进入竞技排行。',
+      players: '2人',
+      duration: '视对局而定',
+      category: '体育竞技',
+      tags: ['台球', '双人联机'],
+      featured: false,
+      supportsAI: false,
+      maxPlayers: 2,
+      status: 'preview',
+      externalEntry: '/g/billiards/',
+      source: 'axfsz/billiards@ec9a66ac67b3576c74b56aff75fde68895ccdca9',
+      acceptance: 'automated-two-session-only',
+      cover: '/assets/game-covers/billiards.svg'
+    },
+    'mahjong-mamahjong': {
+      name: 'MaMahjong 多人麻将',
+      icon: '🀄',
+      subtitle: '开源上游接入预览 · 待真人验收',
+      description: '复用 MaMahjong 的网页客户端、房间、服务端权威规则、同步和逐玩家私牌投影，支持四人／三人日麻、冲击麻将、四川麻将和武汉麻将。已接入平台稳定身份、同源 HTTP/WS、返回大厅、Windows 归档兼容和单镜像构建；平台战绩、真人多设备与断公网验收未完成。',
+      players: '3–4人（源码规则）',
+      duration: '视规则而定',
+      category: '牌桌竞技',
+      tags: ['麻将', '开源上游', '接入预览'],
+      supportsAI: false,
+      maxPlayers: 4,
+      status: 'preview',
+      externalEntry: '/g/mamahjong/',
+      source: 'yemaster/mamahjong@c903603cfefc5786126173b33468e7df001280de',
+      acceptance: 'single-browser-room-created',
+      cover: '/assets/game-covers/mahjong-sichuan.webp'
+    },
+    'kof-wing': {
+      name: '拳皇 Wing 1.85',
+      icon: 'VS',
+      subtitle: '用户本地资源适配 · 局域网双人预览',
+      description: '复用用户提供的原 SWF、角色、战斗规则和 Ruffle 运行时；房主浏览器运行唯一权威实例，第二名玩家通过无公网 STUN/TURN 的局域网 WebRTC 接收画面，并由平台房间回传原版 2P 按键。访客声音、房主战斗中刷新恢复、真人双设备及阻断公网验收未完成；原游戏无可靠结算接口，暂不接入战绩或排行榜。',
+      players: '1–2人（联机限2人）',
+      duration: '视对局而定',
+      category: '动作格斗',
+      tags: ['格斗', '局域网双人', '键盘', '用户本地资源'],
+      featured: false,
+      supportsAI: true,
+      maxPlayers: 2,
+      status: 'candidate',
+      source: 'user-supplied-local-bundle@sha256:6c45fdc725d4910da5335ed74b66b6540b4bbdeffb74602b7b6c49185bc6e297',
+      acceptance: 'two-browser-webrtc-battle-smoke',
+      cover: '/assets/game-covers/kof-wing.svg'
+    },
+    'social-starliner': {
+      name: 'Starliner 地图行动候选', icon: '?',
+      subtitle: '预览适配 · 默认关闭',
+      description: '地图行动；源码限制3–10人，四会话协议预检通过，真人未验；手机触控源码存在、实机未验；建议现场交流，会议内置文字聊天，语音可选但未验；预览可记个人休闲战绩，不进入竞技排行榜。汉化和离线真人验收待完成。',
+      players: '3–10人（源码限制）', duration: '未验证', category: '阵营推理',
+      tags: ['地图行动', '预览候选'], supportsAI: false, maxPlayers: 0,
+      status: 'candidate',
+      source: 'syedawais10/starliner-game@367f2f33cfff88f6cab6bbd4b6712e2c25aa02cb',
+      cover: '/assets/game-covers/social-deduction.svg'
+    },
+    'social-onenight': {
+      name: '一夜狼人杀', icon: '?',
+      subtitle: '预览适配 · 默认关闭',
+      description: '桌游式；复用上游房间、服务端配牌、夜间行动、投票和胜负规则，源码限制3–10人，真人未验；手机未验；需现场交流；无内置文字或语音。已接入平台身份、安全回席和分最终阵营的个人休闲战绩，不进入竞技排行榜；不能代替地图行动类。',
+      players: '3–10人（规则限制）', duration: '未验证', category: '阵营推理',
+      tags: ['桌游式', '预览候选'], supportsAI: false, maxPlayers: 0,
+      status: 'candidate',
+      source: 'hangyu-feng/onenight-werewolf@6a60bc96a72c6f93cb10938f970011f733a72df8',
+      cover: '/assets/game-covers/social-deduction.svg'
+    },
   };
 
 
   var catalog = zhCatalog;
+  var gameNestSource = 'absswds/GameNest@c9f1207be23012a8cb278f312ccbd81196a760c3';
 
   Object.keys(catalog).forEach(function(id) {
+    if (!catalog[id].status && !catalog[id].externalEntry) {
+      catalog[id].status = 'prototype';
+      catalog[id].source = gameNestSource;
+      catalog[id].acceptance = 'not-real-player-verified';
+    }
     if (!catalog[id].cover) {
       catalog[id].cover = '/assets/game-covers/' + id + '.webp';
     }
@@ -467,7 +549,12 @@
     'exploding-kittens',
     'truthdare',
     'snakebattle',
-    'battleship'
+    'battleship',
+    'billiards',
+    'mahjong-mamahjong',
+    'kof-wing',
+    'social-starliner',
+    'social-onenight'
   ];
 
   function getLangPack() {

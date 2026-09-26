@@ -215,7 +215,14 @@
   }
   i18nStatic();
 
-  function connect() {
+  async function connect() {
+    try {
+      const response = await fetch('/api/session', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Session unavailable');
+    } catch (error) {
+      setTimeout(connect, 1500);
+      return;
+    }
     if (ws) { try { ws.close(); } catch(e) {} }
     ws = new WebSocket(getSocketURL());
     ws.onopen = () => send('join_room', { roomId, resumeToken, lang: window.__ACTIVE_LANG || 'zh' });
@@ -665,11 +672,11 @@
         var fc = roomOptions.firstCaller || 'random';
         var ad = roomOptions.allowDouble || false;
         var ash = roomOptions.allowShowHand || false;
-        var pt = roomOptions.playTimeLimit || 20;
+        var pt = roomOptions.playTimeLimit || 0;
         var tr = roomOptions.totalRounds || 3;
         if (isHost) {
-          var timeOpts = [10, 20, 60, 300];
-          var roundOpts = [3, 6, 9, 12];
+          var timeOpts = [0, 10, 20, 60, 300];
+          var roundOpts = [1, 3, 6, 9, 12];
           optionsEl.innerHTML =
             '<div style="font-size:13px;font-weight:600;margin-bottom:10px;">' + _t('game_settings') + '</div>' +
             // Row 1: 叫地主方式

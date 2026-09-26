@@ -1,0 +1,30 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+test('remaining social deduction candidates are described but cannot be launched', () => {
+  const root = path.resolve(__dirname, '..');
+  const catalog = fs.readFileSync(path.join(root, 'public/js/game-catalog.js'), 'utf8');
+  const page = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  const sandbox = { window: {} };
+  vm.runInNewContext(catalog, sandbox);
+  const games = sandbox.window.gameCatalog.list();
+  const candidates = games.filter(game => game.category === '阵营推理');
+  assert.equal(candidates.length, 2);
+  assert.equal(candidates.every(game => game.status === 'candidate' && !game.externalEntry), true);
+  assert.equal(games.some(game => game.id === 'social-among-us'), false);
+  assert.match(page, /阵营推理 · 第二阶段候选/);
+  assert.doesNotMatch(page, /Among-Us/);
+  assert.match(page, /Starliner（地图行动类预览候选）/);
+  assert.match(page, /桌游式候选/);
+  assert.match(page, /未接入战绩或排行榜/);
+  assert.match(page, /未接入，不可开局/);
+  assert.match(page, /fetch\('\/api\/integrations'/);
+  assert.match(page, /probeLegacyPreview\('social-starliner', '\/g\/starliner\/'\)/);
+  assert.match(page, /probeLegacyPreview\('social-onenight', '\/g\/onenight\/'\)/);
+  assert.match(page, /game\.status = 'preview'/);
+  assert.match(page, /game\.externalEntry = integration\.entry/);
+  assert.match(page, /管理员实际启用本地预览/);
+});

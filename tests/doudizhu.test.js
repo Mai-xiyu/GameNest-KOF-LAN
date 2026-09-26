@@ -28,6 +28,25 @@ function playCards(state, pi, ids) { return ddz.handleMove({ cards: ids === unde
 
 function getFirstId(hand) { return hand.length > 0 ? hand[hand.length - 1].id : null; }
 
+test('playerView keeps only the receiving seat cards private', function() {
+  var state = makeState();
+  var originalHands = JSON.stringify(state.hands);
+  for (var playerIndex = 0; playerIndex < 3; playerIndex++) {
+    var view = ddz.playerView(state, playerIndex);
+    assert.deepStrictEqual(view.hands[playerIndex], state.hands[playerIndex]);
+    assert.deepStrictEqual(view.bottomCards, [null, null, null]);
+    assert.equal(view.board, undefined);
+    for (var otherIndex = 0; otherIndex < 3; otherIndex++) {
+      if (otherIndex === playerIndex) continue;
+      assert.deepStrictEqual(view.hands[otherIndex], new Array(state.hands[otherIndex].length).fill(null));
+      assert.equal(JSON.stringify(view).includes(state.hands[otherIndex][0].id), false);
+    }
+  }
+  assert.equal(JSON.stringify(state.hands), originalHands);
+  state.phase = 'playing';
+  assert.deepStrictEqual(ddz.playerView(state, 0).bottomCards, state.bottomCards);
+});
+
 // ── 叫分 mode ──
 test('叫分: first player bids 3 → instant landlord', function() {
   var state = makeState({ bidMode: 'score', totalRounds: 1 });

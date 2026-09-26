@@ -73,6 +73,17 @@ http://<主机IP>:3000
 taskkill /f /im node.exe
 ```
 
+### 可选：拳皇 Wing 1.85 局域网接入
+
+拳皇适配器复用部署者提供的原版 SWF 和随包 Ruffle 运行时。由于未提供游戏 SWF 的再分发许可，这些资源不会提交到本仓库。
+
+```powershell
+npm run prepare:kof-wing -- "C:\path\to\kof_wing_1.85_html5" "output\kof-wing"
+npm start
+```
+
+通过指纹校验的资源包存在时，大厅才会开放拳皇预览入口。房主浏览器运行唯一权威游戏实例；2P 通过仅使用局域网候选的 WebRTC 接收画面，并经平台 WebSocket 房间回传原版 2P 按键。控制方式、Docker 打包、验证证据和已知限制见 [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md)。
+
 ## 怎么玩
 
 1. 在一台电脑或 Android 设备上启动 GameNest。
@@ -91,6 +102,7 @@ taskkill /f /im node.exe
 | 派对同乐 | 大富翁、飞行棋、你画我猜、UNO、数字炸弹、抽鬼牌、爆炸猫、真心话大冒险 |
 | 脑力闯关 | 羊了个羊、24点、数独、2048、扫雷竞速 |
 | 实时对战 | 合成大西瓜、贪吃蛇大乱斗 |
+| 可选本地接入 | 拳皇 Wing 1.85 局域网双人预览（部署者自备资源） |
 
 ## 常用命令
 
@@ -98,6 +110,7 @@ taskkill /f /im node.exe
 npm start             # 启动局域网服务器
 npm test              # 运行回归测试
 npm run check         # 检查项目 JavaScript 语法
+npm run prepare:kof-wing -- SOURCE DESTINATION # 准备本地拳皇资源
 npm run test:monopoly # 运行大富翁专项测试
 npm run build:desktop # 构建 Windows 独立运行包
 ```
@@ -132,10 +145,12 @@ cd android
 |-- startup-port.js           # 端口重试辅助（server.js 依赖）
 |-- games/                    # 游戏规则与状态流转
 |-- bots/                     # AI 走法生成
+|-- deploy/                   # 独立打包游戏的适配层
 |-- lang/                     # 服务端文本
 |-- public/                   # 大厅、游戏壳、渲染器、样式、资源
 |-- scripts/                  # 检查和维护脚本
 |-- tests/                    # node:test 回归测试
+|-- output/                   # 已忽略的本地接入资源包
 |-- android/                  # Android Studio 包装工程（含 nodejs-mobile main.js）
 |-- docs/                     # 架构与发布文档
 `-- archive/                  # 本地存档（不跟踪）

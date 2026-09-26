@@ -11,6 +11,7 @@
     "start": "node server.js",
     "test": "node scripts/run-tests.js",
     "check": "node scripts/check-syntax.js",
+    "prepare:kof-wing": "node scripts/prepare-kof-wing.js",
     "build:desktop": "npx @yao-pkg/pkg . --out-path dist --targets node24-win-x64 --compress Brotli",
     "test:monopoly": "node tests/monopoly.test.js"
   },
@@ -38,7 +39,7 @@
   "type": "commonjs",
   "dependencies": {
     "compression": "^1.8.1",
-    "express": "^4.22.2",
+    "express": "^4.22.3",
     "qrcode": "^1.5.4",
     "ws": "^8.21.0"
   }
