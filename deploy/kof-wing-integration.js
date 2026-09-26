@@ -262,7 +262,19 @@ function createKofWingIntegration(options) {
     const payload = message.payload;
     if (!payload || JSON.stringify(payload).length > 48 * 1024) return;
     const target = senderIsHost ? room.guest : room.host;
-    send(target?.socket, { type: 'signal', kind: message.kind, payload });
+    const negotiationId = typeof message.negotiationId === 'string' && /^[a-f0-9-]{1,64}$/i.test(message.negotiationId)
+      ? message.negotiationId : null;
+    send(target?.socket, { type: 'signal', kind: message.kind, payload, negotiationId });
+  }
+
+  function relayPeerState(socket, type) {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'playing') return;
+    if (type === 'peer_ready' && room.guest?.playerId === socket.player.playerId) {
+      send(room.host.socket, { type: 'peer_ready' });
+    } else if (type === 'peer_probe' && room.host.playerId === socket.player.playerId) {
+      send(room.guest?.socket, { type: 'peer_probe' });
+    }
   }
 
   function relayInput(socket, message) {
@@ -297,6 +309,7 @@ function createKofWingIntegration(options) {
     else if (message.type === 'leave_room') leaveCurrentRoom(socket, true);
     else if (message.type === 'start_game') startGame(socket);
     else if (message.type === 'signal') relaySignal(socket, message);
+    else if (message.type === 'peer_ready' || message.type === 'peer_probe') relayPeerState(socket, message.type);
     else if (message.type === 'input') relayInput(socket, message);
     else if (message.type === 'stream_state') updateStreamState(socket, message.value);
   }

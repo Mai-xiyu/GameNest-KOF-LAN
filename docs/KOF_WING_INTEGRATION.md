@@ -42,15 +42,17 @@ Docker 构建上下文必须已经包含准备好的 `output/kof-wing`：
 
 ```powershell
 docker build --target kof-wing-preview -t gamenest:kof-wing .
-docker run --rm -p 3000:3000 -v gamenest-data:/data gamenest:kof-wing
+docker run --rm -p 3000:3000/tcp -p 3000:3000/udp -v gamenest-data:/data gamenest:kof-wing
 ```
+
+TCP 提供大厅、资源和 WebSocket；同端口 UDP 提供只响应私有／回环地址的本地 STUN。遗漏 UDP 映射时大厅仍可打开，但跨设备画面可能无法协商。
 
 ## 双人网络模型
 
 1. 房主创建 `KOF-XXXXXX` 房间；服务端以平台会话中的稳定玩家 ID 绑定房主席位。
 2. 第二名玩家加入后，只有房主可以开始游戏；房间不允许第三人、中途加入或观战。
 3. 房主浏览器运行唯一 SWF/Ruffle 实例，并捕获该实例的画面流。
-4. 两端通过同源 WebSocket 交换 WebRTC 信令，`RTCPeerConnection` 使用空 `iceServers`，不依赖公网 STUN/TURN。
+4. 两端通过同源 WebSocket 交换 WebRTC 信令；大厅在同一端口的 UDP 上提供最小本地 STUN，只返回局域网可见地址，不连接公网 STUN/TURN。
 5. 访客按键经 WebSocket 发送到房主；服务端只接受当前房间访客身份提交的白名单 2P 按键。
 6. 房主页面把输入映射为原版 `Arrow*` 和 `Numpad1`—`Numpad6` 事件。断开连接时服务端要求房主释放全部远程按键，避免粘键。
 
@@ -69,6 +71,8 @@ docker run --rm -p 3000:3000 -v gamenest-data:/data gamenest:kof-wing
 
 - 平台身份建房、加入、满房拒绝、房主开局权限和断线回原席位。
 - 同源 WebRTC offer/answer/ICE 信令转发，不配置公网 ICE 服务。
+- 访客就绪后再生成 offer；页面广播不会重复触发协商，连接失败可手动重新协商。
+- Ruffle 固定使用 Canvas 兼容渲染，并提供“重载游戏”按钮处理 Logo 后持续黑屏。
 - 只允许访客提交白名单 2P 输入，断线会释放按键。
 - 两个独立浏览器会话的局域网画面连接。
 - 原版模式选择、角色选择、按键模式确认和实际战斗启动。

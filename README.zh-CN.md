@@ -82,7 +82,7 @@ npm run prepare:kof-wing -- "C:\path\to\kof_wing_1.85_html5" "output\kof-wing"
 npm start
 ```
 
-通过指纹校验的资源包存在时，大厅才会开放拳皇预览入口。房主浏览器运行唯一权威游戏实例；2P 通过仅使用局域网候选的 WebRTC 接收画面，并经平台 WebSocket 房间回传原版 2P 按键。控制方式、Docker 打包、验证证据和已知限制见 [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md)。
+通过指纹校验的资源包存在时，大厅才会开放拳皇预览入口。房主浏览器运行唯一权威游戏实例；2P 通过带同主机本地 STUN 的局域网 WebRTC 接收画面，并经平台 WebSocket 房间回传原版 2P 按键，不依赖公网 ICE 服务。控制方式、Docker 打包、验证证据和已知限制见 [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md)。
 
 ## 怎么玩
 

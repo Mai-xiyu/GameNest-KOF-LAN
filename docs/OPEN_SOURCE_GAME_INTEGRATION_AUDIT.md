@@ -14,7 +14,7 @@
 
 拳皇 Wing 不属于已确认可再分发的开源游戏。当前只复用用户本地提供的 `kof_wing_1.85_html5` 资源包，游戏 SWF 固定 SHA-256 为 `6c45fdc725d4910da5335ed74b66b6540b4bbdeffb74602b7b6c49185bc6e297`；Ruffle 固定为 `@ruffle-rs/ruffle@0.6.0`。生成资源在 `output/kof-wing`，不提交 Git，也不应在未确认游戏权利的情况下推送到公开仓库或镜像仓库。
 
-接入采用房主单权威 SWF + 局域网 WebRTC 画面 + 平台 WebSocket 访客输入，不复制两个 Flash 实例做伪同步，也不重写角色、素材、战斗和规则。两个独立浏览器会话已进入实际 PVP 战斗并验证访客移动和按键注入；两台真实设备、真人整局、Docker、实体手机和阻断公网仍未验收，因此只在资源存在时运行时升级为 `preview`。
+接入采用房主单权威 SWF + 局域网 WebRTC 画面 + 平台 WebSocket 访客输入，不复制两个 Flash 实例做伪同步，也不重写角色、素材、战斗和规则。跨设备首轮暴露的 offer 时序与 ICE 地址问题已改为访客就绪协商，并增加同主机 UDP 本地 STUN；Ruffle 强制 Canvas 兼容渲染并提供重载按钮。两个独立浏览器会话已进入实际 PVP 战斗并验证访客移动和按键注入；两台真实设备、真人整局、Docker、实体手机和阻断公网仍未验收，因此只在资源存在时运行时升级为 `preview`。
 
 完整记录见 [KOF_WING_INTEGRATION.md](KOF_WING_INTEGRATION.md)。
 

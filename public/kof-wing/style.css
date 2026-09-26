@@ -120,6 +120,7 @@ input:focus { border-color: rgba(233,59,59,.75); box-shadow: 0 0 0 3px rgba(233,
 .play-toolbar > div:first-child { display: grid; }
 .play-toolbar span { color: var(--muted); font-size: 12px; }
 .connection-pill { color: var(--cyan); font-size: 13px; }
+.play-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .game-stage { position: relative; width: 100%; aspect-ratio: 16/9; max-height: calc(100vh - 170px); background: #000; border: 1px solid var(--line); border-top: 0; overflow: hidden; }
 .host-game, .guest-game, #ruffleContainer, ruffle-player, #remoteVideo { width: 100%; height: 100%; }
 ruffle-player, #remoteVideo { display: block; object-fit: contain; background: #000; }
@@ -155,6 +156,8 @@ ruffle-player, #remoteVideo { display: block; object-fit: contain; background: #
   .versus-seats { grid-template-columns: 1fr; }
   .versus-mark { justify-self: center; line-height: .7; }
   .play-toolbar { flex-wrap: wrap; }
+  .play-actions { width: 100%; flex-wrap: wrap; }
+  .play-actions button { flex: 1; }
   .game-stage { aspect-ratio: 4/3; max-height: none; }
   .controls-card { grid-template-columns: 1fr; }
 }

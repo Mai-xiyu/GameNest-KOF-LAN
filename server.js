@@ -12,6 +12,7 @@ const { createStarlinerProxy } = require('./deploy/starliner-proxy');
 const { createOnenightProxy } = require('./deploy/onenight-proxy');
 const { createMamahjongProxy } = require('./deploy/mamahjong-proxy');
 const { createKofWingIntegration } = require('./deploy/kof-wing-integration');
+const { createLocalStunServer } = require('./deploy/local-stun');
 const startupLogPath = path.join(__dirname, 'android-startup.log');
 const store = createStore(process.env.DATA_DIR || path.join(__dirname, 'data'));
 
@@ -225,6 +226,9 @@ const kofWingDirectory = Object.prototype.hasOwnProperty.call(process.env, 'KOF_
 const kofWingIntegration = createKofWingIntegration({
   assetsDirectory: kofWingDirectory,
   sessionFromRequest,
+});
+const kofWingStun = createLocalStunServer({
+  onError: error => console.error('[KOF] Local STUN error:', error.message),
 });
 if (kofWingIntegration.bundle.configured) app.use('/g/kof-wing', (req, res) => {
   if (req.method === 'GET' && (req.path === '/' || req.path === '') && !sessionFromRequest(req)) {
@@ -2053,6 +2057,12 @@ function startServer(port, attempt = 0) {
     activePort = port;
     const lanIPs = getShareableLanIPs();
 
+    if (kofWingIntegration.bundle.available) {
+      kofWingStun.start(port)
+        .then(() => console.log(`  KOF LAN STUN: udp://0.0.0.0:${port}`))
+        .catch(error => console.error('[KOF] Local STUN unavailable:', error.message));
+    }
+
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');
     console.log('  ║    🎲  GameNest                     ║');
@@ -2121,6 +2131,7 @@ function stopServer() {
   }
   clearInterval(wssHeartbeat);
   kofWingIntegration.close();
+  kofWingStun.close();
   for (const client of wss.clients) client.close(1001, 'Server shutting down');
   wss.close();
   server.close(async () => {

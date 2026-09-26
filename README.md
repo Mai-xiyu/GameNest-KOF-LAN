@@ -82,7 +82,7 @@ npm run prepare:kof-wing -- "C:\path\to\kof_wing_1.85_html5" "output\kof-wing"
 npm start
 ```
 
-When the fingerprinted bundle is available, the lobby exposes a runtime-gated KOF preview. The host browser runs the single authoritative game instance; player 2 receives its video over LAN-only WebRTC and sends the original 2P controls through the platform WebSocket room. See [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md) for controls, Docker packaging, validation evidence, and known limits.
+When the fingerprinted bundle is available, the lobby exposes a runtime-gated KOF preview. The host browser runs the single authoritative game instance; player 2 receives its video over LAN-only WebRTC with a same-host local STUN responder and sends the original 2P controls through the platform WebSocket room. See [docs/KOF_WING_INTEGRATION.md](docs/KOF_WING_INTEGRATION.md) for controls, Docker packaging, validation evidence, and known limits.
 
 ## How It Works
 

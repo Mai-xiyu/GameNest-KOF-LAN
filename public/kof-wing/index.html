@@ -110,7 +110,11 @@
       <div class="play-toolbar">
         <div><strong id="playRole">对局</strong><span id="playRoomCode"></span></div>
         <div class="connection-pill" id="connectionState">正在连接画面…</div>
-        <button class="danger" id="leaveGameButton" type="button">退出并关闭对局</button>
+        <div class="play-actions">
+          <button class="secondary" id="retryConnectionButton" type="button">重连画面</button>
+          <button class="secondary hidden" id="reloadGameButton" type="button">重载游戏</button>
+          <button class="danger" id="leaveGameButton" type="button">退出并关闭对局</button>
+        </div>
       </div>
 
       <div class="game-stage">
@@ -118,7 +122,7 @@
           <div id="ruffleContainer"></div>
           <div class="stage-notice" id="hostNotice">
             <strong>正在载入原版游戏…</strong>
-            <span>载入后点击画面，使用 1P 键位进入“双人 / 玩家 VS 玩家”。</span>
+            <span>载入后点击画面；如更新 Logo 后持续黑屏，请点“重载游戏”。</span>
           </div>
         </div>
         <div class="guest-game hidden" id="guestGame">

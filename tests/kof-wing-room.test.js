@@ -121,9 +121,20 @@ test('KOF room service binds two platform identities and only relays guest 2P in
     assert.equal((await hostStarted).role, 'host');
     assert.equal((await guestStarted).role, 'guest');
 
+    const peerReadySeen = waitFor(host, message => message.type === 'peer_ready');
+    guest.send(JSON.stringify({ type: 'peer_ready' }));
+    await peerReadySeen;
+
+    const peerProbeSeen = waitFor(guest, message => message.type === 'peer_probe');
+    host.send(JSON.stringify({ type: 'peer_probe' }));
+    await peerProbeSeen;
+
     const offerSeen = waitFor(guest, message => message.type === 'signal' && message.kind === 'offer');
-    host.send(JSON.stringify({ type: 'signal', kind: 'offer', payload: { type: 'offer', sdp: 'test-sdp' } }));
-    assert.equal((await offerSeen).payload.sdp, 'test-sdp');
+    host.send(JSON.stringify({ type: 'signal', kind: 'offer', negotiationId: 'abc-123',
+      payload: { type: 'offer', sdp: 'test-sdp' } }));
+    const relayedOffer = await offerSeen;
+    assert.equal(relayedOffer.payload.sdp, 'test-sdp');
+    assert.equal(relayedOffer.negotiationId, 'abc-123');
 
     const inputSeen = waitFor(host, message => message.type === 'remote_input' && message.code === 'Numpad1');
     guest.send(JSON.stringify({ type: 'input', action: 'down', code: 'Numpad1', sequence: 1 }));

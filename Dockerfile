@@ -87,7 +87,7 @@ USER node
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data \
     BILLIARDS_DIR=/app/integrations/billiards BILLIARDS_PORT=8188 \
     MAMAHJONG_DIR=/app/integrations/mamahjong MAMAHJONG_PORT=8190
-EXPOSE 3000
+EXPOSE 3000/tcp 3000/udp
 VOLUME /data
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

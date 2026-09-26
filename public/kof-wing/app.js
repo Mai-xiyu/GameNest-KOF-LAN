@@ -23,6 +23,8 @@
     hostNotice: document.getElementById('hostNotice'),
     guestNotice: document.getElementById('guestNotice'),
     remoteVideo: document.getElementById('remoteVideo'),
+    retryConnectionButton: document.getElementById('retryConnectionButton'),
+    reloadGameButton: document.getElementById('reloadGameButton'),
     toast: document.getElementById('toast'),
   };
 
@@ -40,6 +42,11 @@
     inputSequence: 0,
     pressedInputs: new Set(),
     startingRole: null,
+    captureCanvas: null,
+    guestReady: false,
+    peerReadySent: false,
+    negotiating: false,
+    negotiationId: null,
   };
 
   const keyboardAliases = new Map([
@@ -87,6 +94,15 @@
     return /^[A-HJ-NP-Z2-9]{6}$/.test(compact) ? `KOF-${compact}` : compact;
   }
 
+  function createNegotiationId() {
+    if (globalThis.crypto?.getRandomValues) {
+      const bytes = new Uint8Array(12);
+      globalThis.crypto.getRandomValues(bytes);
+      return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+    }
+    return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  }
+
   function inviteUrl(roomCode) {
     return `${location.origin}/g/kof-wing/?room=${encodeURIComponent(roomCode)}`;
   }
@@ -129,6 +145,7 @@
       elements.hostGame.classList.toggle('hidden', room.role !== 'host');
       elements.guestGame.classList.toggle('hidden', room.role !== 'guest');
       elements.guestControls.classList.toggle('hidden', room.role !== 'guest');
+      elements.reloadGameButton.classList.toggle('hidden', room.role !== 'host');
       startForRole(room.role);
       return;
     }
@@ -182,6 +199,7 @@
       forceScale: true,
       allowScriptAccess: true,
       warnOnUnsupportedContent: false,
+      preferredRenderer: 'canvas',
       publicPath: '/g/kof-wing/source/ruffle/',
     };
     await new Promise((resolve, reject) => {
@@ -209,12 +227,19 @@
     elements.remoteVideo.srcObject = null;
   }
 
+  function localIceServers() {
+    const host = location.hostname.includes(':') ? `[${location.hostname}]` : location.hostname;
+    const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+    return host ? [{ urls: `stun:${host}:${port}` }] : [];
+  }
+
   function ensurePeerConnection() {
     if (state.peerConnection) return state.peerConnection;
-    const peerConnection = new RTCPeerConnection({ iceServers: [] });
+    const peerConnection = new RTCPeerConnection({ iceServers: localIceServers() });
     state.peerConnection = peerConnection;
     peerConnection.onicecandidate = event => {
-      if (event.candidate) send({ type: 'signal', kind: 'ice', payload: event.candidate.toJSON() });
+      if (event.candidate) send({ type: 'signal', kind: 'ice', negotiationId: state.negotiationId,
+        payload: event.candidate.toJSON() });
     };
     peerConnection.onconnectionstatechange = () => {
       const connectionState = peerConnection.connectionState;
@@ -222,6 +247,7 @@
         connected: '局域网画面已连接', connecting: '正在建立局域网画面…',
         failed: '画面连接失败', disconnected: '画面暂时断开', closed: '画面已关闭',
       }[connectionState] || '正在协商画面…';
+      if (connectionState === 'failed') elements.guestNotice.classList.remove('hidden');
     };
     if (state.room?.role === 'guest') {
       peerConnection.ontrack = event => {
@@ -235,30 +261,68 @@
     return peerConnection;
   }
 
-  async function flushPendingIce() {
+  async function flushPendingIce(negotiationId) {
     if (!state.peerConnection?.remoteDescription) return;
     const pending = state.pendingIce.splice(0);
-    for (const candidate of pending) await state.peerConnection.addIceCandidate(candidate);
+    for (const entry of pending) {
+      if (!entry.negotiationId || entry.negotiationId === negotiationId) {
+        await state.peerConnection.addIceCandidate(entry.candidate);
+      }
+    }
   }
 
   async function handleSignal(message) {
     try {
       const peerConnection = ensurePeerConnection();
       if (message.kind === 'offer') {
-        await peerConnection.setRemoteDescription(message.payload);
-        await flushPendingIce();
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        send({ type: 'signal', kind: 'answer', payload: peerConnection.localDescription.toJSON() });
+        if (state.negotiationId && state.negotiationId !== message.negotiationId) {
+          const pendingIce = state.pendingIce.filter(entry => entry.negotiationId === message.negotiationId);
+          resetPeerConnection();
+          state.pendingIce = pendingIce;
+        }
+        state.negotiationId = message.negotiationId || createNegotiationId();
+        elements.connectionState.textContent = '已收到房主画面，正在建立局域网直连…';
+        const activePeerConnection = ensurePeerConnection();
+        await activePeerConnection.setRemoteDescription(message.payload);
+        await flushPendingIce(state.negotiationId);
+        const answer = await activePeerConnection.createAnswer();
+        await activePeerConnection.setLocalDescription(answer);
+        send({ type: 'signal', kind: 'answer', negotiationId: state.negotiationId,
+          payload: activePeerConnection.localDescription.toJSON() });
       } else if (message.kind === 'answer') {
+        if (message.negotiationId && message.negotiationId !== state.negotiationId) return;
         await peerConnection.setRemoteDescription(message.payload);
-        await flushPendingIce();
+        await flushPendingIce(state.negotiationId);
       } else if (message.kind === 'ice') {
+        if (message.negotiationId && state.negotiationId && message.negotiationId !== state.negotiationId) {
+          state.pendingIce.push({ negotiationId: message.negotiationId, candidate: message.payload });
+          return;
+        }
         if (peerConnection.remoteDescription) await peerConnection.addIceCandidate(message.payload);
-        else state.pendingIce.push(message.payload);
+        else state.pendingIce.push({ negotiationId: message.negotiationId, candidate: message.payload });
       }
     } catch (error) {
       elements.connectionState.textContent = `画面协商失败：${error.message}`;
+    }
+  }
+
+  async function negotiateHostStream() {
+    if (state.room?.role !== 'host' || !state.captureStream || !state.guestReady || state.negotiating) return;
+    state.negotiating = true;
+    elements.connectionState.textContent = '访客已就绪，正在建立局域网画面…';
+    try {
+      resetPeerConnection();
+      state.negotiationId = createNegotiationId();
+      const peerConnection = ensurePeerConnection();
+      for (const track of state.captureStream.getTracks()) peerConnection.addTrack(track, state.captureStream);
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      send({ type: 'signal', kind: 'offer', negotiationId: state.negotiationId,
+        payload: peerConnection.localDescription.toJSON() });
+    } catch (error) {
+      elements.connectionState.textContent = `画面协商失败：${error.message}`;
+    } finally {
+      state.negotiating = false;
     }
   }
 
@@ -272,19 +336,18 @@
       const player = ruffle.createPlayer();
       state.rufflePlayer = player;
       elements.ruffleContainer.replaceChildren(player);
-      await player.load({ url: '/g/kof-wing/source/game.swf', allowScriptAccess: true });
+      await player.load({ url: '/g/kof-wing/source/game.swf', allowScriptAccess: true, preferredRenderer: 'canvas' });
+      player.play?.();
       const canvas = await waitForCanvas(player);
       if (typeof canvas.captureStream !== 'function') throw new Error('浏览器不支持 Canvas 画面采集');
+      state.captureCanvas = canvas;
       state.captureStream = canvas.captureStream(30);
-      const peerConnection = ensurePeerConnection();
-      for (const track of state.captureStream.getTracks()) peerConnection.addTrack(track, state.captureStream);
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      send({ type: 'signal', kind: 'offer', payload: peerConnection.localDescription.toJSON() });
       send({ type: 'stream_state', value: 'ready' });
       elements.hostNotice.innerHTML = '<strong>点击游戏画面后开始操作</strong><span>使用 1P 键位选择“双人 / 玩家 VS 玩家”；访客输入会映射为原版 2P 键位。</span>';
-      elements.connectionState.textContent = '游戏已启动，等待访客画面连接';
+      elements.connectionState.textContent = '游戏已启动，正在请求访客建立画面';
       player.focus();
+      send({ type: 'peer_probe' });
+      void negotiateHostStream();
     } catch (error) {
       send({ type: 'stream_state', value: 'failed' });
       elements.hostNotice.innerHTML = `<strong>游戏启动失败</strong><span>${escapeHtml(error.message)}</span>`;
@@ -294,10 +357,13 @@
   }
 
   function startGuestGame() {
-    if (state.startingRole === 'guest') return;
-    state.startingRole = 'guest';
+    if (state.startingRole !== 'guest') state.startingRole = 'guest';
     elements.connectionState.textContent = '等待房主发送局域网画面…';
     ensurePeerConnection();
+    if (!state.peerReadySent) {
+      state.peerReadySent = true;
+      send({ type: 'peer_ready' });
+    }
   }
 
   function startForRole(role) {
@@ -353,9 +419,14 @@
       for (const track of state.captureStream.getTracks()) track.stop();
     }
     state.captureStream = null;
+    state.captureCanvas = null;
     state.rufflePlayer?.remove();
     state.rufflePlayer = null;
     state.startingRole = null;
+    state.guestReady = false;
+    state.peerReadySent = false;
+    state.negotiating = false;
+    state.negotiationId = null;
     elements.ruffleContainer.replaceChildren();
     elements.hostNotice.classList.remove('hidden');
     elements.guestNotice.classList.remove('hidden');
@@ -388,6 +459,11 @@
       startForRole(message.role);
     } else if (message.type === 'signal') {
       void handleSignal(message);
+    } else if (message.type === 'peer_ready') {
+      state.guestReady = true;
+      void negotiateHostStream();
+    } else if (message.type === 'peer_probe') {
+      if (state.room?.role === 'guest') send({ type: 'peer_ready' });
     } else if (message.type === 'remote_input') {
       if (message.action === 'release_all') {
         for (const code of Object.keys(hostKeyDefinitions)) dispatchRemoteInput('up', code);
@@ -445,6 +521,31 @@
   elements.startGameButton.addEventListener('click', () => send({ type: 'start_game' }));
   document.getElementById('leaveRoomButton').addEventListener('click', leaveRoom);
   document.getElementById('leaveGameButton').addEventListener('click', leaveRoom);
+  elements.retryConnectionButton.addEventListener('click', () => {
+    resetPeerConnection();
+    if (state.room?.role === 'guest') {
+      ensurePeerConnection();
+      elements.connectionState.textContent = '已请求房主重新发送画面…';
+      send({ type: 'peer_ready' });
+    } else if (state.room?.role === 'host') {
+      state.guestReady = false;
+      elements.connectionState.textContent = '正在请求访客重新连接…';
+      send({ type: 'peer_probe' });
+    }
+  });
+  elements.reloadGameButton.addEventListener('click', () => {
+    if (state.room?.role !== 'host') return;
+    resetPeerConnection();
+    if (state.captureStream) for (const track of state.captureStream.getTracks()) track.stop();
+    state.captureStream = null;
+    state.captureCanvas = null;
+    state.rufflePlayer?.remove();
+    state.rufflePlayer = null;
+    state.startingRole = null;
+    elements.ruffleContainer.replaceChildren();
+    elements.hostNotice.innerHTML = '<strong>正在以兼容模式重载…</strong><span>原版游戏会从开头重新开始。</span>';
+    void startHostGame();
+  });
 
   window.addEventListener('keydown', event => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
